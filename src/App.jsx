@@ -3045,78 +3045,159 @@ function makeMockVisits(allClients) {
     "Strong visit overall. Team morale appeared higher than last quarter. Engagement at lunch areas was particularly rich with informal connections.",
     "Notable uptick in grief-related conversations, likely connected to a loss in the community last week. Pastoral care was the primary focus.",
     "Productive visit with good chaplain visibility. Multiple employees flagged interest in a group session next quarter.",
+    "Exceptional engagement today. Employees were eager to connect and the chaplain was able to offer meaningful support across multiple departments.",
+    "A quieter visit — many employees were heads-down on a production push. Chaplain focused on brief, intentional check-ins rather than longer conversations.",
+    "Crisis follow-up was the primary focus today. The chaplain provided ongoing support to individuals affected by last week's incident.",
+    "New employees were especially receptive. Several first-time conversations laid a strong foundation for ongoing chaplain relationships.",
+    "Holiday season is clearly affecting morale. Chaplain noted increased loneliness and financial stress themes across multiple conversations.",
   ];
   const themesList = [
     "Workplace anxiety, particularly around restructuring announcements. Financial stress surfacing in multiple conversations.",
     "Family transitions — several employees navigating eldercare or new parenthood. Grief from a community loss rippling through the site.",
     "Burnout themes among mid-level supervisors. General morale strong on the production floor.",
     "Spiritual questions and meaning-of-work themes. Strong interest in faith-based support.",
+    "Immigration concerns among a portion of the workforce. Chaplain providing presence and connecting families with resources.",
+    "Post-holiday re-entry fatigue visible across shifts. Employees expressing gratitude for chaplain availability.",
+    "Compensation frustrations are a recurring theme. Chaplain listening carefully and providing appropriate referrals.",
+    "Strong community spirit observed. Team celebrated a colleague's milestone and chaplain was invited to participate.",
   ];
   const reflections = [
     "This was a meaningful visit. I felt genuinely present and sustained by the connections made. The challenge was pacing — so many needs, limited time.",
     "Stretched but not depleted. The heavier conversations reminded me why this work matters. Grateful for a strong chaplain team.",
     "I left feeling encouraged. The receptivity here continues to grow. Personal prayer and preparation beforehand made a difference.",
+    "Difficult day emotionally — carried some of the weight home. Will debrief with supervisor and lean on team support.",
+    "One of my best visits in months. The trust that has been built here over time is bearing real fruit.",
   ];
 
   const seed = (s) => { let h=0; for(let c of s) h=(h*31+c.charCodeAt(0))&0xffffffff; return Math.abs(h); };
-  const pick = (arr, s) => arr[s % arr.length];
+  const pick = (arr, s) => arr[Math.abs(s) % arr.length];
   const TYPES = INTERACTION_TYPES.map(t=>t.key);
 
   let id = 1;
-  const months = ["2024-08","2024-09","2024-10","2024-11","2024-12","2025-01","2025-02"];
+
+  // Full 12-month calendar: Aug 2024 – Jul 2025
+  const months = [
+    "2024-08","2024-09","2024-10","2024-11","2024-12",
+    "2025-01","2025-02","2025-03","2025-04","2025-05","2025-06","2025-07"
+  ];
+
+  // Days in each month (non-leap 2024/2025)
+  const daysInMonth = {
+    "2024-08":31,"2024-09":30,"2024-10":31,"2024-11":30,"2024-12":31,
+    "2025-01":31,"2025-02":28,"2025-03":31,"2025-04":30,"2025-05":31,"2025-06":30,"2025-07":31
+  };
+
+  // Generate a realistic spread of visit days for a client in a month
+  // Large clients (chaplains >= 5) get 8-12 visits/month
+  // Medium clients (chaplains 3-4) get 5-8 visits/month
+  // Small clients (chaplains 1-2) get 2-4 visits/month
+  function getVisitDays(client, ym) {
+    const totalDays = daysInMonth[ym];
+    const base = seed(client.id + ym + "days");
+    const chaps = client.chaplains || 1;
+    const count = chaps >= 5 ? 8 + (base % 5)      // 8–12
+                : chaps >= 3 ? 5 + (base % 4)       // 5–8
+                :              2 + (base % 3);       // 2–4
+
+    // Spread visits across the month avoiding weekends (approx) and clustering
+    const days = new Set();
+    let attempts = 0;
+    while (days.size < count && attempts < 100) {
+      const d = 1 + (seed(client.id + ym + attempts + "d") % totalDays);
+      // Avoid day 1 (often admin) and last day; prefer M-F range simulation
+      const dow = new Date(`${ym}-${String(d).padStart(2,"0")}T12:00`).getDay();
+      if (dow !== 0 && dow !== 6 && d > 1 && d < totalDays) days.add(d);
+      attempts++;
+    }
+    // If we didn't get enough, fill remaining without weekend filter
+    while (days.size < count && attempts < 200) {
+      const d = 1 + (seed(client.id + ym + attempts + "fill") % totalDays);
+      if (d > 1 && d < totalDays) days.add(d);
+      attempts++;
+    }
+    return Array.from(days).sort((a,b)=>a-b);
+  }
 
   allClients.forEach(client => {
-    const chaps = chaplainsByClient[client.id] || [];
-    months.forEach((ym, mi) => {
-      const numVisits = 1 + (seed(client.id+ym) % 2);
-      for (let vi = 0; vi < numVisits; vi++) {
-        const s = seed(client.id+ym+vi);
-        const day = 3 + (s % 24);
-        const date = `${ym}-${String(day).padStart(2,"0")}`;
-        const chaplainCount = 1 + (s % Math.min(3, chaps.length));
-        const presentChaplains = chaps.slice(0, chaplainCount);
+    const chaps = chaplainsByClient[client.id] || ["Chaplain"];
+    months.forEach((ym) => {
+      const visitDays = getVisitDays(client, ym);
+      visitDays.forEach((day, vi) => {
+        const dateStr = `${ym}-${String(day).padStart(2,"0")}`;
+        const s = seed(client.id + dateStr + vi);
+
+        // More chaplains present on larger visits
+        const maxChaps = Math.min(chaps.length, client.chaplains >= 5 ? 3 : 2);
+        const chaplainCount = 1 + (s % maxChaps);
+        // Rotate which chaplains show up to create variety
+        const startIdx = (s % chaps.length);
+        const presentChaplains = [];
+        for (let ci = 0; ci < chaplainCount; ci++) {
+          presentChaplains.push(chaps[(startIdx + ci) % chaps.length]);
+        }
+
+        // Interaction types — more variety, higher counts for bigger sites
         const interactions = {};
-        const typeCount = 3 + (s % 5);
+        const typeCount = 4 + (s % 6);
         for (let ti = 0; ti < typeCount; ti++) {
-          const k = TYPES[(s+ti*7) % TYPES.length];
-          interactions[k] = (interactions[k]||0) + 1 + ((s+ti) % 3);
+          const k = TYPES[(s + ti * 7) % TYPES.length];
+          const cnt = 1 + ((s + ti * 3) % (client.employees > 1000 ? 8 : client.employees > 500 ? 5 : 3));
+          interactions[k] = (interactions[k] || 0) + cnt;
         }
         const total = Object.values(interactions).reduce((a,b)=>a+b,0);
-        const hasIssue = (s % 7 === 0);
+
+        // Duration varies by client size and visit type
+        const durPool = client.employees > 2000
+          ? ["2–4 hours","4–6 hours","4–6 hours","Full day","Full day"]
+          : client.employees > 800
+          ? ["1–2 hours","2–4 hours","2–4 hours","4–6 hours","Full day"]
+          : ["1–2 hours","1–2 hours","2–4 hours","2–4 hours","4–6 hours"];
+        const duration = pick(durPool, s);
+
+        const visitTypePool = ["Scheduled Visit","Scheduled Visit","Scheduled Visit","Follow-up Visit","Chaplain Check-in","Crisis Response"];
+        const hasIssue = (s % 11 === 0); // ~9% have a flagged issue
+        const followUpNeeded = (s % 5 === 0);
+
         logs.push({
           id: String(id++),
-          date,
+          date: dateStr,
           clientId: client.id,
           clientName: client.name,
           clientColor: client.color,
           clientLogo: client.logo,
           chaplains: presentChaplains,
-          visitType: pick(["Scheduled Visit","Follow-up Visit","Chaplain Check-in","Scheduled Visit","Scheduled Visit"],s),
-          duration: pick(["1–2 hours","2–4 hours","4–6 hours","Full day"],s),
-          totalEmployees: 8 + (s % 40),
+          visitType: pick(visitTypePool, s),
+          duration,
+          totalEmployees: Math.round(client.employees * (0.03 + (s % 10) * 0.01)),
           interactions,
           totalInteractions: total,
-          followUpNeeded: (s % 4 === 0),
-          followUpNotes: (s%4===0) ? "Employee in difficult season — check in next visit. Referral to EAP being arranged." : "",
+          followUpNeeded,
+          followUpNotes: followUpNeeded ? "Employee in difficult season — check in next visit. Referral to EAP being arranged." : "",
           periodOverview: pick(overviews, s),
           themes: pick(themesList, s),
-          recommendations: "Continue regular presence. Consider group session offering for Q2. Follow up with HR contact on referral outcomes.",
-          referrals: (s%3===0) ? "One referral made to EAP. Coordinated with HR on confidential basis." : "No formal referrals this period.",
+          recommendations: "Continue regular presence. Consider group session offering next quarter. Follow up with HR contact on referral outcomes.",
+          referrals: (s%4===0) ? "One referral made to EAP. Coordinated with HR on confidential basis." : "No formal referrals this period.",
           personalReflection: pick(reflections, s),
           siteWellbeing: String(3 + (s % 3)),
           availabilityNext: "Full availability",
           flagIncident: hasIssue,
           issues: hasIssue ? [{
-            id:"i1", category: pick(ERROR_CATEGORIES, s+3),
-            severity: pick(["low","medium","high"],s+1),
-            description: "Access to the east wing was restricted without prior notice, limiting chaplain rounds for approximately 45 minutes.",
+            id:"i1",
+            category: pick(ERROR_CATEGORIES, s+3),
+            severity: pick(["low","medium","high"], s+1),
+            description: pick([
+              "Access to the east wing was restricted without prior notice, limiting chaplain rounds for approximately 45 minutes.",
+              "A scheduling miscommunication resulted in the chaplain arriving during a mandatory all-hands meeting.",
+              "An employee in distress required extended support — chaplain stayed two additional hours beyond scheduled visit.",
+              "Safety concern reported by employee — chaplain documented and escalated to site coordinator per protocol.",
+            ], s+5),
             resolution: "Coordinator contacted — issue resolved for future visits.",
-            reportToVP: (s%2===0),
+            reportToVP: (s%3===0),
           }] : [],
           submittedDays: (s % 5),
-          onTime: (s%5) <= 3,
+          onTime: (s % 5) <= 3,
         });
-      }
+      });
     });
   });
 
@@ -3533,7 +3614,7 @@ function parseDuration(dur) {
 
 function HoursCalendarPage({ user, allClients }) {
   const visits = getVisitLog(allClients);
-  const today = new Date(2025, 1, 15); // Feb 15 2025 (matches mock data range)
+  const today = new Date(2025, 0, 15); // Jan 15 2025 — center of our rich data range
 
   const [viewYear,  setViewYear]  = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth()); // 0-indexed
@@ -3689,7 +3770,7 @@ function HoursCalendarPage({ user, allClients }) {
               const heat = heatColor(hours);
               const isSelected = selectedDay === dateStr;
               const isHovered  = hoveredDay === dateStr;
-              const isToday = dateStr === "2025-02-15";
+              const isToday = dateStr === "2025-01-15";
               const hasFlag = dayVisits.some(v=>v.flagIncident);
 
               return (
