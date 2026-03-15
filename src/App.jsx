@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import { useState, useRef } from "react";
 import {
   BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -3520,7 +3520,379 @@ function VisitLogPage({ user, allClients, onBack }) {
 }
 
 // ── App Shell (shared nav for all pages) ─────────────────────────────────────
-function AppShell({ page, setPage, user, setUser, lang, setLang, children }) {
+// ── Hours Calendar Page ───────────────────────────────────────────────────────
+// Duration string → decimal hours
+function parseDuration(dur) {
+  if (!dur) return 2;
+  if (dur === "Full day") return 8;
+  if (dur === "4–6 hours") return 5;
+  if (dur === "2–4 hours") return 3;
+  if (dur === "1–2 hours") return 1.5;
+  return 2;
+}
+
+function HoursCalendarPage({ user, allClients }) {
+  const visits = getVisitLog(allClients);
+  const today = new Date(2025, 1, 15); // Feb 15 2025 (matches mock data range)
+
+  const [viewYear,  setViewYear]  = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth()); // 0-indexed
+  const [selectedDay, setSelectedDay] = useState(null); // "YYYY-MM-DD"
+  const [hoveredDay,  setHoveredDay]  = useState(null);
+  const [drillVisit,  setDrillVisit]  = useState(null);
+  const [viewMode,    setViewMode]    = useState("month"); // "month" | "week" | "year"
+  const [clientFilter, setClientFilter] = useState("all");
+
+  // Role-scoped visits
+  const scopedVisits = visits.filter(v => {
+    if (user.role === "Chaplain") return v.chaplains.includes(user.name);
+    if (user.role === "EDO")      return allClients.filter(c=>c.id===v.clientId).some(c=>c.edoId===user.id||c.region===user.region);
+    return true; // VP / Exec see all
+  });
+
+  const filteredVisits = clientFilter === "all" ? scopedVisits
+    : scopedVisits.filter(v => v.clientId === clientFilter);
+
+  // Build date → visits map
+  const visitsByDate = {};
+  filteredVisits.forEach(v => {
+    if (!visitsByDate[v.date]) visitsByDate[v.date] = [];
+    visitsByDate[v.date].push(v);
+  });
+
+  // Date → total hours
+  const hoursByDate = {};
+  Object.entries(visitsByDate).forEach(([date, vs]) => {
+    hoursByDate[date] = vs.reduce((sum, v) => sum + parseDuration(v.duration), 0);
+  });
+
+  // Heat color based on hours (0=empty, 1-2=light, 3-5=medium, 6+=deep)
+  function heatColor(hours) {
+    if (!hours) return null;
+    if (hours <= 2)  return { bg:"#dbeafe", text:"#1e40af", dot:"#3b82f6" };
+    if (hours <= 4)  return { bg:"#bfdbfe", text:"#1d4ed8", dot:"#2563eb" };
+    if (hours <= 6)  return { bg:"#93c5fd", text:"#1e3a8a", dot:"#1d4ed8" };
+    if (hours <= 10) return { bg:"#3b82f6", text:"#fff",    dot:"#1d4ed8" };
+    return               { bg:"#1a4a7a", text:"#fff",    dot:"#0f2441" };
+  }
+
+  // Calendar grid helpers
+  const daysInMonth = (y, m) => new Date(y, m+1, 0).getDate();
+  const firstDayOfMonth = (y, m) => new Date(y, m, 1).getDay(); // 0=Sun
+  const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const DAY_LABELS = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+
+  // Stats for current month
+  const monthKey = `${viewYear}-${String(viewMonth+1).padStart(2,"0")}`;
+  const monthVisits = filteredVisits.filter(v => v.date.startsWith(monthKey));
+  const monthHours  = monthVisits.reduce((s,v) => s+parseDuration(v.duration), 0);
+  const monthInteractions = monthVisits.reduce((s,v) => s+v.totalInteractions, 0);
+  const monthChaplains = new Set(monthVisits.flatMap(v=>v.chaplains)).size;
+  const activeDays = Object.keys(hoursByDate).filter(d=>d.startsWith(monthKey)).length;
+
+  // Year-level data for mini sparkline
+  const yearMonthData = Array.from({length:12}, (_,mi) => {
+    const mk = `${viewYear}-${String(mi+1).padStart(2,"0")}`;
+    const mvs = filteredVisits.filter(v=>v.date.startsWith(mk));
+    return {
+      month: MONTH_NAMES[mi].slice(0,3),
+      hours: Math.round(mvs.reduce((s,v)=>s+parseDuration(v.duration),0)),
+      visits: mvs.length,
+    };
+  });
+
+  // Selected day data
+  const selectedVisits = selectedDay ? (visitsByDate[selectedDay] || []) : [];
+  const selectedHours  = selectedDay ? (hoursByDate[selectedDay] || 0) : 0;
+
+  function prevMonth() {
+    if (viewMonth === 0) { setViewYear(y=>y-1); setViewMonth(11); }
+    else setViewMonth(m=>m-1);
+    setSelectedDay(null);
+  }
+  function nextMonth() {
+    if (viewMonth === 11) { setViewYear(y=>y+1); setViewMonth(0); }
+    else setViewMonth(m=>m+1);
+    setSelectedDay(null);
+  }
+
+  const dim = daysInMonth(viewYear, viewMonth);
+  const firstDay = firstDayOfMonth(viewYear, viewMonth);
+  const calCells = [...Array(firstDay).fill(null), ...Array.from({length:dim},(_,i)=>i+1)];
+  while (calCells.length % 7 !== 0) calCells.push(null);
+
+  return (
+    <div style={{ padding:"24px 28px", maxWidth:1200, margin:"0 auto" }}>
+
+      {/* ── Page header ── */}
+      <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12 }}>
+        <div>
+          <h1 style={{ fontSize:24,fontWeight:700,color:"#1a2a3a",fontFamily:"'Georgia',serif",margin:0 }}>🕐 Hours & Activity Calendar</h1>
+          <p style={{ fontSize:13,color:"#6b7a8d",marginTop:4 }}>Chaplain time logged across all client sites — click any day to drill into visit details.</p>
+        </div>
+        <div style={{ display:"flex",gap:8,alignItems:"center",flexWrap:"wrap" }}>
+          {/* Client filter */}
+          <select value={clientFilter} onChange={e=>{setClientFilter(e.target.value);setSelectedDay(null);}}
+            style={{ padding:"7px 12px",borderRadius:8,border:"1px solid #d0dae6",fontSize:12,color:"#1a2a3a",background:"#fff",cursor:"pointer" }}>
+            <option value="all">All Clients</option>
+            {allClients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* ── KPI strip ── */}
+      <div style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:20 }}>
+        {[
+          { icon:"⏱", label:"Hours This Month",        value:monthHours.toFixed(1),    sub:"chaplain hours logged",      col:"#1a4a7a" },
+          { icon:"📋", label:"Visits This Month",       value:monthVisits.length,        sub:`across ${activeDays} active days`, col:"#0e6655" },
+          { icon:"🤝", label:"Interactions",            value:monthInteractions,          sub:"total employee touchpoints", col:"#6d28d9" },
+          { icon:"🧑‍⚕️", label:"Chaplains Active",       value:monthChaplains,             sub:"unique chaplains on-site",   col:"#b45309" },
+        ].map((k,i)=>(
+          <div key={i} style={{ background:"#fff",border:"1px solid #e8edf2",borderRadius:12,padding:"14px 16px",borderTop:`3px solid ${k.col}` }}>
+            <div style={{ fontSize:20,marginBottom:6 }}>{k.icon}</div>
+            <div style={{ fontSize:26,fontWeight:700,color:k.col,fontFamily:"'Georgia',serif",lineHeight:1 }}>{k.value}</div>
+            <div style={{ fontSize:11,fontWeight:700,color:"#1a2a3a",marginTop:5,textTransform:"uppercase",letterSpacing:"0.05em" }}>{k.label}</div>
+            <div style={{ fontSize:10,color:"#9aa8b8",marginTop:2 }}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display:"grid",gridTemplateColumns:"1fr 340px",gap:16,alignItems:"start" }}>
+
+        {/* ── LEFT: Calendar ── */}
+        <div style={{ background:"#fff",borderRadius:14,border:"1px solid #e8edf2",overflow:"hidden",boxShadow:"0 2px 12px rgba(0,0,0,0.05)" }}>
+
+          {/* Calendar header */}
+          <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 20px",borderBottom:"1px solid #f0f4f8" }}>
+            <button onClick={prevMonth} style={{ border:"none",background:"#f0f4f8",borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:15,color:"#1a2a3a",display:"flex",alignItems:"center",justifyContent:"center" }}>‹</button>
+            <div style={{ textAlign:"center" }}>
+              <div style={{ fontSize:18,fontWeight:700,color:"#1a2a3a",fontFamily:"'Georgia',serif" }}>{MONTH_NAMES[viewMonth]} {viewYear}</div>
+              <div style={{ fontSize:11,color:"#9aa8b8",marginTop:2 }}>{monthHours.toFixed(1)} hours · {monthVisits.length} visits this month</div>
+            </div>
+            <button onClick={nextMonth} style={{ border:"none",background:"#f0f4f8",borderRadius:8,width:32,height:32,cursor:"pointer",fontSize:15,color:"#1a2a3a",display:"flex",alignItems:"center",justifyContent:"center" }}>›</button>
+          </div>
+
+          {/* Day-of-week labels */}
+          <div style={{ display:"grid",gridTemplateColumns:"repeat(7,1fr)",padding:"8px 12px 4px" }}>
+            {DAY_LABELS.map(d=>(
+              <div key={d} style={{ textAlign:"center",fontSize:10,fontWeight:700,color:"#9aa8b8",textTransform:"uppercase",letterSpacing:"0.08em",padding:"4px 0" }}>{d}</div>
+            ))}
+          </div>
+
+          {/* Calendar grid */}
+          <div style={{ display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3,padding:"4px 12px 16px" }}>
+            {calCells.map((day, ci) => {
+              if (!day) return <div key={`e${ci}`} />;
+              const dateStr = `${viewYear}-${String(viewMonth+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+              const dayVisits = visitsByDate[dateStr] || [];
+              const hours = hoursByDate[dateStr] || 0;
+              const heat = heatColor(hours);
+              const isSelected = selectedDay === dateStr;
+              const isHovered  = hoveredDay === dateStr;
+              const isToday = dateStr === "2025-02-15";
+              const hasFlag = dayVisits.some(v=>v.flagIncident);
+
+              return (
+                <div key={dateStr}
+                  onClick={()=>{ if(dayVisits.length) setSelectedDay(isSelected ? null : dateStr); }}
+                  onMouseEnter={()=>setHoveredDay(dateStr)}
+                  onMouseLeave={()=>setHoveredDay(null)}
+                  style={{
+                    borderRadius:10,
+                    padding:"6px 4px 8px",
+                    textAlign:"center",
+                    cursor: dayVisits.length ? "pointer" : "default",
+                    background: isSelected ? "#1a4a7a" : heat ? heat.bg : isHovered && dayVisits.length ? "#f0f4f8" : "transparent",
+                    border: isSelected ? "2px solid #1a4a7a" : isToday ? "2px solid #f39c12" : "2px solid transparent",
+                    transition:"all 0.12s",
+                    transform: isHovered && dayVisits.length && !isSelected ? "scale(1.06)" : "scale(1)",
+                    boxShadow: isSelected ? "0 4px 14px rgba(26,74,122,0.25)" : isHovered && dayVisits.length ? "0 2px 8px rgba(0,0,0,0.08)" : "none",
+                    minHeight:64,
+                    position:"relative",
+                  }}>
+                  {/* Date number */}
+                  <div style={{ fontSize:12,fontWeight:isToday||dayVisits.length?700:400,color:isSelected?"#fff":isToday?"#f39c12":dayVisits.length?"#1a2a3a":"#b0bcc8",marginBottom:3 }}>{day}</div>
+
+                  {/* Hours badge */}
+                  {hours > 0 && (
+                    <div style={{ fontSize:13,fontWeight:700,color:isSelected?"#fff":heat?.text,lineHeight:1 }}>{hours % 1 === 0 ? hours : hours.toFixed(1)}<span style={{ fontSize:9,opacity:0.75 }}>h</span></div>
+                  )}
+
+                  {/* Visit count dots */}
+                  {dayVisits.length > 0 && (
+                    <div style={{ display:"flex",justifyContent:"center",gap:2,marginTop:4,flexWrap:"wrap" }}>
+                      {dayVisits.slice(0,4).map((v,i)=>(
+                        <div key={i} style={{ width:6,height:6,borderRadius:"50%",background:isSelected?"rgba(255,255,255,0.7)":v.clientColor,opacity:0.9 }} title={v.clientName} />
+                      ))}
+                      {dayVisits.length > 4 && <div style={{ fontSize:8,color:isSelected?"rgba(255,255,255,0.7)":"#9aa8b8" }}>+{dayVisits.length-4}</div>}
+                    </div>
+                  )}
+
+                  {/* Flag indicator */}
+                  {hasFlag && (
+                    <div style={{ position:"absolute",top:3,right:3,fontSize:9 }}>⚠️</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Heat legend */}
+          <div style={{ display:"flex",alignItems:"center",gap:8,padding:"10px 20px 14px",borderTop:"1px solid #f0f4f8",flexWrap:"wrap" }}>
+            <span style={{ fontSize:10,color:"#9aa8b8",fontWeight:600 }}>Hours:</span>
+            {[["none","#f0f4f8","0"],["#dbeafe","#dbeafe","1–2h"],["#bfdbfe","#bfdbfe","3–4h"],["#93c5fd","#93c5fd","5–6h"],["#3b82f6","#3b82f6","7–10h"],["#1a4a7a","#1a4a7a","10h+"]].map(([_,bg,label])=>(
+              <div key={label} style={{ display:"flex",alignItems:"center",gap:3 }}>
+                <div style={{ width:12,height:12,borderRadius:3,background:bg,border:"1px solid #e0e6ef" }} />
+                <span style={{ fontSize:10,color:"#6b7a8d" }}>{label}</span>
+              </div>
+            ))}
+            <div style={{ marginLeft:"auto",display:"flex",alignItems:"center",gap:4 }}>
+              <div style={{ width:10,height:10,borderRadius:"50%",background:"#e74c3c" }} />
+              <span style={{ fontSize:10,color:"#6b7a8d" }}>Flagged issue</span>
+            </div>
+          </div>
+        </div>
+
+        {/* ── RIGHT: Year sparkline + day drill-down ── */}
+        <div style={{ display:"flex",flexDirection:"column",gap:12 }}>
+
+          {/* Year overview bar chart */}
+          <div style={{ background:"#fff",borderRadius:14,border:"1px solid #e8edf2",padding:"16px",boxShadow:"0 2px 12px rgba(0,0,0,0.04)" }}>
+            <div style={{ fontSize:12,fontWeight:700,color:"#1a2a3a",marginBottom:4 }}>📊 {viewYear} at a Glance</div>
+            <div style={{ fontSize:10,color:"#9aa8b8",marginBottom:10 }}>Hours per month — click a bar to jump</div>
+            <ResponsiveContainer width="100%" height={100}>
+              <BarChart data={yearMonthData} barSize={14} onClick={e=>{ if(e?.activeTooltipIndex!=null){ setViewMonth(e.activeTooltipIndex); setSelectedDay(null); } }}>
+                <XAxis dataKey="month" tick={{ fontSize:9,fill:"#9aa8b8" }} axisLine={false} tickLine={false} />
+                <YAxis hide />
+                <Tooltip formatter={(v,n)=>[`${v}${n==="hours"?" hrs":" visits"}`]} contentStyle={{ fontSize:11,borderRadius:8,border:"1px solid #e0e6ef" }} />
+                <Bar dataKey="hours" name="hours" radius={[4,4,0,0]}>
+                  {yearMonthData.map((entry,i)=>(
+                    <Cell key={i} fill={i===viewMonth?"#1a4a7a":entry.hours>0?"#93c5fd":"#e8edf2"} cursor="pointer" />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Day detail panel */}
+          {selectedDay ? (
+            <div style={{ background:"#fff",borderRadius:14,border:"1px solid #e8edf2",overflow:"hidden",boxShadow:"0 2px 12px rgba(0,0,0,0.05)" }}>
+              {/* Day header */}
+              <div style={{ background:"linear-gradient(135deg,#1a4a7a 0%,#2563eb 100%)",padding:"14px 16px",color:"#fff" }}>
+                <div style={{ fontSize:10,opacity:0.75,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:2 }}>
+                  {new Date(selectedDay+"T12:00").toLocaleDateString("en-US",{weekday:"long"})}
+                </div>
+                <div style={{ fontSize:18,fontWeight:700,fontFamily:"'Georgia',serif" }}>
+                  {new Date(selectedDay+"T12:00").toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"})}
+                </div>
+                <div style={{ display:"flex",gap:14,marginTop:8 }}>
+                  <div style={{ fontSize:11,opacity:0.85 }}>⏱ <strong>{selectedHours.toFixed(1)}h</strong> total</div>
+                  <div style={{ fontSize:11,opacity:0.85 }}>📋 <strong>{selectedVisits.length}</strong> {selectedVisits.length===1?"visit":"visits"}</div>
+                  <div style={{ fontSize:11,opacity:0.85 }}>🤝 <strong>{selectedVisits.reduce((s,v)=>s+v.totalInteractions,0)}</strong> interactions</div>
+                </div>
+              </div>
+
+              {/* Visit list */}
+              <div style={{ overflowY:"auto",maxHeight:400 }}>
+                {selectedVisits.map((visit,vi)=>{
+                  const hrs = parseDuration(visit.duration);
+                  return (
+                    <div key={visit.id}
+                      onClick={()=>setDrillVisit(visit)}
+                      style={{ padding:"12px 16px",borderBottom:"1px solid #f0f4f8",cursor:"pointer",transition:"background 0.12s" }}
+                      onMouseEnter={e=>e.currentTarget.style.background="#f7f9fc"}
+                      onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                      <div style={{ display:"flex",alignItems:"flex-start",gap:10 }}>
+                        {/* Client color dot */}
+                        <div style={{ width:36,height:36,borderRadius:10,background:visit.clientColor+"22",border:`2px solid ${visit.clientColor}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0 }}>
+                          {visit.clientLogo}
+                        </div>
+                        <div style={{ flex:1,minWidth:0 }}>
+                          <div style={{ fontSize:12,fontWeight:700,color:"#1a2a3a",marginBottom:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap" }}>{visit.clientName}</div>
+                          <div style={{ fontSize:11,color:"#6b7a8d",marginBottom:4 }}>{visit.visitType} · {visit.duration}</div>
+                          {/* Chaplains */}
+                          <div style={{ display:"flex",gap:4,flexWrap:"wrap" }}>
+                            {visit.chaplains.map(ch=>(
+                              <div key={ch} style={{ fontSize:10,padding:"1px 6px",borderRadius:6,background:"#eaf0ff",color:"#1a4a7a",fontWeight:600 }}>
+                                {ch.replace("Rev. ","").replace("Chap. ","")}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div style={{ textAlign:"right",flexShrink:0 }}>
+                          <div style={{ fontSize:16,fontWeight:700,color:"#1a4a7a",fontFamily:"'Georgia',serif" }}>{hrs}<span style={{ fontSize:10,color:"#9aa8b8" }}>h</span></div>
+                          <div style={{ fontSize:10,color:"#9aa8b8",marginTop:1 }}>{visit.totalInteractions} conv.</div>
+                          {visit.flagIncident && <div style={{ fontSize:11,marginTop:2 }}>⚠️</div>}
+                        </div>
+                      </div>
+
+                      {/* Interaction type mini pills */}
+                      <div style={{ display:"flex",gap:4,marginTop:8,flexWrap:"wrap" }}>
+                        {Object.entries(visit.interactions).sort((a,b)=>b[1]-a[1]).slice(0,4).map(([key,cnt])=>{
+                          const t = INTERACTION_TYPES.find(x=>x.key===key);
+                          return t ? (
+                            <div key={key} style={{ fontSize:10,padding:"2px 7px",borderRadius:8,background:"#f0f4f8",color:"#4a5568",display:"flex",alignItems:"center",gap:3 }}>
+                              <span>{t.icon}</span> {cnt} {t.label.split(" ")[0]}
+                            </div>
+                          ) : null;
+                        })}
+                      </div>
+                      <div style={{ fontSize:10,color:"#3b82f6",marginTop:6,fontWeight:600 }}>View full report →</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            /* No day selected — prompt */
+            <div style={{ background:"#fff",borderRadius:14,border:"2px dashed #e0e6ef",padding:"32px 20px",textAlign:"center" }}>
+              <div style={{ fontSize:36,marginBottom:12 }}>📅</div>
+              <div style={{ fontSize:13,fontWeight:700,color:"#1a2a3a",marginBottom:6 }}>Select a day</div>
+              <div style={{ fontSize:12,color:"#9aa8b8",lineHeight:1.6 }}>Click any highlighted day on the calendar to see chaplain visits, hours logged, and full interaction details.</div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Bottom: Monthly summary bar breakdown ── */}
+      <div style={{ marginTop:16,background:"#fff",borderRadius:14,border:"1px solid #e8edf2",padding:"18px 20px",boxShadow:"0 2px 12px rgba(0,0,0,0.04)" }}>
+        <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14 }}>
+          <div style={{ fontSize:13,fontWeight:700,color:"#1a2a3a" }}>📈 Daily Hours — {MONTH_NAMES[viewMonth]} {viewYear}</div>
+          <div style={{ fontSize:11,color:"#9aa8b8" }}>Click a bar to select that day</div>
+        </div>
+        <ResponsiveContainer width="100%" height={120}>
+          <BarChart
+            data={Array.from({length:daysInMonth(viewYear,viewMonth)},(_,i)=>{
+              const d = String(i+1).padStart(2,"0");
+              const dateStr = `${viewYear}-${String(viewMonth+1).padStart(2,"0")}-${d}`;
+              return { day:i+1, date:dateStr, hours: hoursByDate[dateStr]||0, visits:(visitsByDate[dateStr]||[]).length };
+            })}
+            barSize={14}
+            onClick={e=>{ if(e?.activePayload?.[0]?.payload?.hours > 0) setSelectedDay(e.activePayload[0].payload.date); }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f0f4f8" vertical={false} />
+            <XAxis dataKey="day" tick={{ fontSize:9,fill:"#9aa8b8" }} axisLine={false} tickLine={false} interval={1} />
+            <YAxis tick={{ fontSize:9,fill:"#9aa8b8" }} axisLine={false} tickLine={false} unit="h" width={24} />
+            <Tooltip formatter={(v,n)=>[`${v}${n==="hours"?" hrs":" visits"}`]} contentStyle={{ fontSize:11,borderRadius:8,border:"1px solid #e0e6ef" }} labelFormatter={d=>`Day ${d} of ${MONTH_NAMES[viewMonth]}`} />
+            <Bar dataKey="hours" name="hours" radius={[4,4,0,0]}>
+              {Array.from({length:daysInMonth(viewYear,viewMonth)},(_,i)=>{
+                const d = String(i+1).padStart(2,"0");
+                const dateStr = `${viewYear}-${String(viewMonth+1).padStart(2,"0")}-${d}`;
+                const isSelected = selectedDay === dateStr;
+                const hrs = hoursByDate[dateStr]||0;
+                return <Cell key={i} fill={isSelected?"#1a4a7a":hrs>0?"#3b82f6":"#e8edf2"} cursor={hrs>0?"pointer":"default"} />;
+              })}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* ── Visit Detail Modal (full report) ── */}
+      {drillVisit && <VisitDetailModal visit={drillVisit} onClose={()=>setDrillVisit(null)} />}
+    </div>
+  );
+}
+
+
   const [collapsed, setCollapsed] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
@@ -3530,6 +3902,7 @@ function AppShell({ page, setPage, user, setUser, lang, setLang, children }) {
   const NAV = [
     { id:"dashboard", label:"Dashboard",   emoji:"🏠", group:"main"    },
     { id:"visits",    label:"Visit Log",   emoji:"📒", group:"main"    },
+    { id:"hours",     label:"Hours",       emoji:"🕐", group:"main"    },
     { id:"ecr",       label:"ECR Builder", emoji:"✏️",  group:"reports" },
     { id:"chaplains", label:"Chaplains",   emoji:"🤝", group:"reports" },
   ];
@@ -3686,7 +4059,7 @@ function AppShell({ page, setPage, user, setUser, lang, setLang, children }) {
   );
 }
 
-export default function App() {
+export default function EDODashboard() {
   const [user, setUser] = useState(null);
   const [lang, setLang] = useState("en");
   const [page, setPage] = useState("dashboard"); // "dashboard" | "ecr" | "chaplains" | "visits"
@@ -3702,6 +4075,14 @@ export default function App() {
   const allClients = getClientsForUser(user);
 
   // All pages use AppShell
+  if (page === "hours") {
+    return (
+      <AppShell page={page} setPage={setPage} user={user} setUser={setUser} lang={lang} setLang={setLang}>
+        <HoursCalendarPage user={user} allClients={allClients} />
+      </AppShell>
+    );
+  }
+
   if (page === "ecr") {
     return (
       <AppShell page={page} setPage={setPage} user={user} setUser={setUser} lang={lang} setLang={setLang}>
