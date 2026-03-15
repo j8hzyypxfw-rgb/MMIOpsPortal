@@ -4409,21 +4409,25 @@ function AppShell({ page, setPage, user, setUser, lang, setLang, children }) {
           </div>
         </div>
 
-        {/* ── Announcement banners ── */}
-        {visibleAnn.map(ann => (
-          <div key={ann.id} style={{ background:ann.urgent?"linear-gradient(90deg,#7f1d1d,#991b1b)":"linear-gradient(90deg,#1e3a5f,#1a4a7a)",padding:"10px 24px",display:"flex",alignItems:"flex-start",gap:12,flexShrink:0,position:"sticky",top:50,zIndex:99 }}>
-            <div style={{ fontSize:16,flexShrink:0,marginTop:1 }}>{ann.urgent?"🚨":"📣"}</div>
-            <div style={{ flex:1,minWidth:0 }}>
-              <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:2 }}>
-                {ann.urgent && <div style={{ fontSize:10,fontWeight:700,background:"#fca5a5",color:"#7f1d1d",padding:"1px 7px",borderRadius:5,letterSpacing:"0.06em" }}>URGENT</div>}
-                <div style={{ fontSize:10,color:"rgba(255,255,255,0.55)" }}>From {ann.author} · {timeAgo(ann.ts)}</div>
+        {/* ── Announcement banners — single sticky block so ALL stay visible on scroll ── */}
+        {visibleAnn.length > 0 && (
+          <div style={{ position:"sticky",top:50,zIndex:99,flexShrink:0 }}>
+            {visibleAnn.map(ann => (
+              <div key={ann.id} style={{ background:ann.urgent?"linear-gradient(90deg,#7f1d1d,#991b1b)":"linear-gradient(90deg,#1e3a5f,#1a4a7a)",padding:"10px 24px",display:"flex",alignItems:"flex-start",gap:12,borderBottom:"1px solid rgba(255,255,255,0.08)" }}>
+                <div style={{ fontSize:16,flexShrink:0,marginTop:1 }}>{ann.urgent?"🚨":"📣"}</div>
+                <div style={{ flex:1,minWidth:0 }}>
+                  <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:2 }}>
+                    {ann.urgent && <div style={{ fontSize:10,fontWeight:700,background:"#fca5a5",color:"#7f1d1d",padding:"1px 7px",borderRadius:5,letterSpacing:"0.06em" }}>URGENT</div>}
+                    <div style={{ fontSize:10,color:"rgba(255,255,255,0.55)" }}>From {ann.author} · {timeAgo(ann.ts)}</div>
+                  </div>
+                  <div style={{ fontSize:12,color:"rgba(255,255,255,0.92)",lineHeight:1.5 }}>{ann.text}</div>
+                </div>
+                <button onClick={()=>setDismissedBanners(s=>new Set([...s,ann.id]))}
+                  style={{ background:"rgba(255,255,255,0.12)",border:"none",borderRadius:6,width:24,height:24,cursor:"pointer",color:"rgba(255,255,255,0.6)",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>✕</button>
               </div>
-              <div style={{ fontSize:12,color:"rgba(255,255,255,0.92)",lineHeight:1.5 }}>{ann.text}</div>
-            </div>
-            <button onClick={()=>setDismissedBanners(s=>new Set([...s,ann.id]))}
-              style={{ background:"rgba(255,255,255,0.12)",border:"none",borderRadius:6,width:24,height:24,cursor:"pointer",color:"rgba(255,255,255,0.6)",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>✕</button>
+            ))}
           </div>
-        ))}
+        )}
 
         {/* Admin: post new announcement (VP/Exec only) */}
         {canPost && (
