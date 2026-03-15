@@ -3996,7 +3996,533 @@ function HoursCalendarPage({ user, allClients }) {
   );
 }
 
-// ── App Shell (Sidebar Nav) ───────────────────────────────────────────────────
+// ── Tasks & CRM Mock Data ─────────────────────────────────────────────────────
+const TASK_SOURCES = { dynamics:"Dynamics 365", workday:"Workday", portal:"MM Portal" };
+const TASKS_STORE = [
+  // Dynamics 365 synced
+  { id:"t1",  source:"dynamics", title:"Q1 ECR Report — Acme Manufacturing",         clientId:"c1", clientName:"Acme Manufacturing",    assignee:"Sarah Mitchell", role:"EDO",  due:"2025-02-15", priority:"high",   status:"todo",       category:"report",   notes:"Client requested expanded wellness section. Confirm data with chaplain team first.", crmRef:"CRM-10042" },
+  { id:"t2",  source:"dynamics", title:"Renewal Call — Sunrise Health Systems",       clientId:"c2", clientName:"Sunrise Health Systems", assignee:"David Huang",    role:"VP",   due:"2025-01-28", priority:"high",   status:"inprogress", category:"call",     notes:"Patricia Yuen requested a call to discuss expanding chaplain coverage to two new wings.", crmRef:"CRM-10038" },
+  { id:"t3",  source:"dynamics", title:"Follow-up: BlueStar Logistics Overdue Report",clientId:"c3", clientName:"BlueStar Logistics",     assignee:"Sarah Mitchell", role:"EDO",  due:"2025-01-20", priority:"urgent", status:"overdue",    category:"followup", notes:"Report 6 weeks overdue. Marcus Webb not responding to emails. Consider escalation to VP.", crmRef:"CRM-10019" },
+  { id:"t4",  source:"dynamics", title:"Contract Renewal Review — Cornerstone Fin.",  clientId:"c4", clientName:"Cornerstone Financial",  assignee:"Rachel Torres",  role:"VP",   due:"2025-03-01", priority:"medium", status:"todo",       category:"contract", notes:"3-year renewal up for discussion. Client satisfaction scores strong. Prep renewal deck.", crmRef:"CRM-10051" },
+  { id:"t5",  source:"dynamics", title:"Site Visit — Desert Sun Energy Q1",           clientId:"c8", clientName:"Desert Sun Energy",      assignee:"Linda Castillo", role:"EDO",  due:"2025-02-03", priority:"medium", status:"inprogress", category:"visit",    notes:"Coordinate with Rev. Jackson on scheduling. Safety training required for refinery access.", crmRef:"CRM-10044" },
+  { id:"t6",  source:"dynamics", title:"Chaplain Program Review — Rio Verde Hospital",clientId:"c9", clientName:"Rio Verde Hospital",     assignee:"David Huang",    role:"VP",   due:"2025-02-20", priority:"medium", status:"todo",       category:"review",   notes:"Annual program review with CPO. Pull chaplain activity stats for last 12 months.", crmRef:"CRM-10053" },
+  // Workday synced
+  { id:"t7",  source:"workday",  title:"Onboard New Chaplain — Rev. M. Santos",       clientId:"c2", clientName:"Sunrise Health Systems", assignee:"Sarah Mitchell", role:"EDO",  due:"2025-01-31", priority:"high",   status:"inprogress", category:"hr",       notes:"Background check complete. Schedule orientation week of Jan 27. Assign to ICU rotation.", wdRef:"WD-HR-8821" },
+  { id:"t8",  source:"workday",  title:"Performance Review — Chap. D. Allen",         clientId:"c1", clientName:"Acme Manufacturing",    assignee:"Sarah Mitchell", role:"EDO",  due:"2025-02-10", priority:"medium", status:"todo",       category:"hr",       notes:"Annual performance review. Gather visit metrics and peer feedback before meeting.", wdRef:"WD-HR-8834" },
+  { id:"t9",  source:"workday",  title:"Expense Report Approval — James Okafor",      clientId:null, clientName:"Internal",              assignee:"Rachel Torres",  role:"VP",   due:"2025-01-25", priority:"low",    status:"done",       category:"finance",  notes:"Q4 expense reports submitted. Approved pending finance review.", wdRef:"WD-EXP-3301" },
+  { id:"t10", source:"workday",  title:"Training Certification — Crisis Response",    clientId:null, clientName:"All Chaplains",         assignee:"David Huang",    role:"VP",   due:"2025-02-14", priority:"high",   status:"todo",       category:"training", notes:"Mandatory crisis response recertification. All chaplains must complete by Feb 14.", wdRef:"WD-TRN-2201" },
+  // Portal-created
+  { id:"t11", source:"portal",   title:"Prepare Heartland Foods Q4 Summary Deck",    clientId:"c6", clientName:"Heartland Foods Co.",    assignee:"Linda Castillo", role:"EDO",  due:"2025-02-07", priority:"medium", status:"todo",       category:"report",   notes:"Executive team requested a one-pager on chaplain ROI for their board presentation." },
+  { id:"t12", source:"portal",   title:"Schedule Chaplain Listening Sessions — Pinnacle", clientId:"c5", clientName:"Pinnacle Logistics", assignee:"James Okafor", role:"EDO", due:"2025-02-12", priority:"medium", status:"inprogress", category:"visit",    notes:"EDO to coordinate 3 listening sessions with night shift teams across Q1." },
+  { id:"t13", source:"portal",   title:"Great Plains — New Contact Outreach",         clientId:"c7", clientName:"Great Plains Auto Group",assignee:"James Okafor",  role:"EDO",  due:"2025-01-30", priority:"low",    status:"todo",       category:"followup", notes:"New HR Director started Jan 6. Reach out to introduce program and schedule intro call." },
+];
+let taskNextId = 200;
+
+// CRM customer detail mock
+const CRM_DETAIL = {
+  c1: { stage:"Active", contractValue:84000, contractStart:"2022-03-01", contractEnd:"2026-03-01", renewalProb:92, lastContact:"2025-01-15", nextAction:"Q1 ECR delivery", satisfaction:4.8, interactions:[{date:"2025-01-15",type:"ECR Delivery",by:"Sarah Mitchell"},{date:"2024-10-10",type:"Quarterly Review",by:"David Huang"},{date:"2024-07-01",type:"Contract Renewal",by:"Rachel Torres"}] },
+  c2: { stage:"At Risk", contractValue:156000, contractStart:"2021-06-01", contractEnd:"2025-06-01", renewalProb:64, lastContact:"2024-12-20", nextAction:"Renewal call scheduled Jan 28", satisfaction:3.9, interactions:[{date:"2024-12-20",type:"Check-in Call",by:"David Huang"},{date:"2024-09-14",type:"Issue Escalation",by:"Rachel Torres"},{date:"2024-06-01",type:"Annual Review",by:"David Huang"}] },
+  c3: { stage:"Overdue", contractValue:48000, contractStart:"2023-01-01", contractEnd:"2026-01-01", renewalProb:41, lastContact:"2024-11-10", nextAction:"Escalation call — report 6wks overdue", satisfaction:2.8, interactions:[{date:"2024-11-10",type:"Report Follow-up",by:"Sarah Mitchell"},{date:"2024-08-22",type:"Site Visit",by:"Sarah Mitchell"}] },
+  c4: { stage:"Active", contractValue:62000, contractStart:"2022-09-01", contractEnd:"2025-09-01", renewalProb:78, lastContact:"2025-01-08", nextAction:"Contract renewal review Mar 1", satisfaction:4.2, interactions:[{date:"2025-01-08",type:"Quarterly Review",by:"Rachel Torres"},{date:"2024-10-01",type:"ECR Delivery",by:"Rachel Torres"}] },
+  c5: { stage:"Active", contractValue:91000, contractStart:"2023-04-01", contractEnd:"2026-04-01", renewalProb:85, lastContact:"2025-01-12", nextAction:"Listening session coordination", satisfaction:4.5, interactions:[{date:"2025-01-12",type:"Check-in Call",by:"James Okafor"},{date:"2024-11-15",type:"ECR Delivery",by:"James Okafor"}] },
+  c6: { stage:"Active", contractValue:128000, contractStart:"2020-07-01", contractEnd:"2026-07-01", renewalProb:95, lastContact:"2025-01-10", nextAction:"Board presentation deck due Feb 7", satisfaction:4.9, interactions:[{date:"2025-01-10",type:"Executive Briefing",by:"David Huang"},{date:"2024-07-01",type:"Contract Renewal",by:"David Huang"}] },
+  c7: { stage:"New Contact", contractValue:29000, contractStart:"2024-02-01", contractEnd:"2027-02-01", renewalProb:70, lastContact:"2025-01-06", nextAction:"New HR Director outreach Jan 30", satisfaction:4.0, interactions:[{date:"2025-01-06",type:"New Contact Note",by:"James Okafor"},{date:"2024-12-01",type:"Check-in Call",by:"James Okafor"}] },
+  c8: { stage:"Active", contractValue:112000, contractStart:"2022-11-01", contractEnd:"2025-11-01", renewalProb:82, lastContact:"2025-01-14", nextAction:"Q1 site visit Feb 3", satisfaction:4.4, interactions:[{date:"2025-01-14",type:"Site Prep Call",by:"Linda Castillo"},{date:"2024-10-22",type:"ECR Delivery",by:"Linda Castillo"}] },
+  c9: { stage:"Active", contractValue:198000, contractStart:"2019-08-01", contractEnd:"2026-08-01", renewalProb:97, lastContact:"2025-01-11", nextAction:"Annual program review Feb 20", satisfaction:4.9, interactions:[{date:"2025-01-11",type:"Program Review Prep",by:"David Huang"},{date:"2024-08-01",type:"Contract Renewal",by:"David Huang"}] },
+};
+
+// ── Tasks Page ─────────────────────────────────────────────────────────────────
+function TasksPage({ user, allClients }) {
+  const myClientIds = new Set(allClients.map(c=>c.id));
+  const [tasks, setTasks] = useState(TASKS_STORE);
+  const [filterStatus,   setFilterStatus]   = useState("all");
+  const [filterSource,   setFilterSource]   = useState("all");
+  const [filterPriority, setFilterPriority] = useState("all");
+  const [filterClient,   setFilterClient]   = useState("all");
+  const [search,         setSearch]         = useState("");
+  const [showForm,       setShowForm]       = useState(false);
+  const [editTask,       setEditTask]       = useState(null);
+  const [newTask,        setNewTask]        = useState({ title:"",clientId:"",due:"",priority:"medium",category:"followup",notes:"",source:"portal" });
+
+  // scope to this user's clients + internal tasks
+  const scoped = tasks.filter(t =>
+    user.role==="VP"||user.role==="Exec" ? true :
+    !t.clientId || myClientIds.has(t.clientId)
+  );
+
+  const filtered = scoped.filter(t => {
+    if (filterStatus!=="all"   && t.status!==filterStatus)     return false;
+    if (filterSource!=="all"   && t.source!==filterSource)     return false;
+    if (filterPriority!=="all" && t.priority!==filterPriority) return false;
+    if (filterClient!=="all"   && t.clientId!==filterClient)   return false;
+    if (search) {
+      const q = search.toLowerCase();
+      return t.title.toLowerCase().includes(q) || t.clientName.toLowerCase().includes(q) || (t.notes||"").toLowerCase().includes(q);
+    }
+    return true;
+  });
+
+  const counts = { todo:0, inprogress:0, done:0, overdue:0 };
+  scoped.forEach(t => { if(counts[t.status]!==undefined) counts[t.status]++; });
+
+  const PRIORITY_C = { urgent:{bg:"#fdedec",text:"#922b21",dot:"#e74c3c",label:"Urgent"}, high:{bg:"#fef9e7",text:"#9a6e00",dot:"#f39c12",label:"High"}, medium:{bg:"#eaf4ff",text:"#1a4a7a",dot:"#3b82f6",label:"Medium"}, low:{bg:"#f0f4f8",text:"#6b7a8d",dot:"#b0bcc8",label:"Low"} };
+  const STATUS_C  = { todo:{bg:"#f0f4f8",text:"#6b7a8d",label:"To Do"}, inprogress:{bg:"#eaf0ff",text:"#1a4a7a",label:"In Progress"}, done:{bg:"#eafaf1",text:"#1e8449",label:"Done"}, overdue:{bg:"#fdedec",text:"#922b21",label:"Overdue"} };
+  const SOURCE_IC = { dynamics:"⚡", workday:"👥", portal:"✅" };
+  const CAT_IC    = { report:"📄", call:"📞", followup:"🔁", contract:"📋", visit:"🏢", hr:"👤", finance:"💰", training:"🎓", review:"🔍" };
+
+  function cycleStatus(id) {
+    const cycle = { todo:"inprogress", inprogress:"done", done:"todo", overdue:"inprogress" };
+    setTasks(p => p.map(t => t.id===id ? {...t, status:cycle[t.status]||"todo"} : t));
+  }
+
+  function saveTask() {
+    if (!newTask.title.trim()) return;
+    const client = allClients.find(c=>c.id===newTask.clientId);
+    if (editTask) {
+      setTasks(p => p.map(t => t.id===editTask ? {...t,...newTask,clientName:client?.name||"Internal"} : t));
+    } else {
+      setTasks(p => [...p, {...newTask, id:"t"+(taskNextId++), status:"todo", clientName:client?.name||"Internal", assignee:user.name, role:user.role, crmRef:null, wdRef:null}]);
+    }
+    setShowForm(false); setEditTask(null);
+    setNewTask({title:"",clientId:"",due:"",priority:"medium",category:"followup",notes:"",source:"portal"});
+  }
+
+  function openEdit(t) {
+    setNewTask({title:t.title,clientId:t.clientId||"",due:t.due,priority:t.priority,category:t.category,notes:t.notes||"",source:t.source});
+    setEditTask(t.id); setShowForm(true);
+  }
+
+  const inputS = { width:"100%",padding:"7px 10px",borderRadius:7,border:"1px solid #d0dae6",fontSize:12,boxSizing:"border-box",outline:"none",background:"#fff" };
+  const selS   = { ...inputS, cursor:"pointer" };
+
+  return (
+    <div style={{ padding:"24px 28px",maxWidth:1200,margin:"0 auto" }}>
+      {/* Header */}
+      <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12 }}>
+        <div>
+          <h1 style={{ fontSize:24,fontWeight:700,color:"#1a2a3a",fontFamily:"'Georgia',serif",margin:0 }}>✅ Tasks</h1>
+          <p style={{ fontSize:13,color:"#6b7a8d",marginTop:4 }}>Synced with Dynamics 365 CRM and Workday — plus your own portal tasks.</p>
+        </div>
+        <button onClick={()=>{setShowForm(true);setEditTask(null);}}
+          style={{ padding:"9px 18px",borderRadius:9,border:"none",background:"#1a4a7a",color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer" }}>
+          + New Task
+        </button>
+      </div>
+
+      {/* KPI strip */}
+      <div style={{ display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:20 }}>
+        {[
+          {label:"Total Tasks",  val:scoped.length,      col:"#1a4a7a", bg:"#eaf0ff"},
+          {label:"To Do",        val:counts.todo,         col:"#6b7a8d", bg:"#f0f4f8"},
+          {label:"In Progress",  val:counts.inprogress,   col:"#2563eb", bg:"#eaf0ff"},
+          {label:"⚠️ Overdue",    val:counts.overdue,      col:"#922b21", bg:"#fdedec"},
+          {label:"✓ Done",        val:counts.done,         col:"#1e8449", bg:"#eafaf1"},
+        ].map((k,i)=>(
+          <div key={i} style={{ background:k.bg,borderRadius:10,padding:"12px 14px",textAlign:"center",border:`1px solid ${k.col}22`,cursor:"pointer" }}
+            onClick={()=>setFilterStatus(i===0?"all":["all","todo","inprogress","overdue","done"][i])}>
+            <div style={{ fontSize:24,fontWeight:700,color:k.col,fontFamily:"'Georgia',serif",lineHeight:1 }}>{k.val}</div>
+            <div style={{ fontSize:10,color:k.col,fontWeight:700,marginTop:4,textTransform:"uppercase",letterSpacing:"0.06em" }}>{k.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Integration badges */}
+      <div style={{ display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center" }}>
+        <div style={{ fontSize:11,color:"#6b7a8d",fontWeight:600 }}>Integrations:</div>
+        {[["dynamics","⚡","Dynamics 365","#e8f0ff","#1a4a7a"],["workday","👥","Workday","#f0fff4","#1e8449"],["portal","✅","MM Portal","#f7f9fc","#6b7a8d"]].map(([src,ic,lbl,bg,col])=>(
+          <div key={src} onClick={()=>setFilterSource(filterSource===src?"all":src)}
+            style={{ display:"flex",alignItems:"center",gap:5,padding:"4px 10px",borderRadius:7,background:filterSource===src?col:bg,color:filterSource===src?"#fff":col,fontSize:11,fontWeight:600,cursor:"pointer",border:`1px solid ${col}33`,transition:"all 0.15s" }}>
+            {ic} {lbl} <span style={{ fontWeight:400,opacity:0.7 }}>({scoped.filter(t=>t.source===src).length})</span>
+          </div>
+        ))}
+        <div style={{ marginLeft:"auto",display:"flex",gap:6,alignItems:"center" }}>
+          <div style={{ width:7,height:7,borderRadius:"50%",background:"#27ae60" }} />
+          <span style={{ fontSize:11,color:"#6b7a8d" }}>Live sync active</span>
+        </div>
+      </div>
+
+      {/* Filters + search */}
+      <div style={{ display:"flex",gap:8,marginBottom:16,flexWrap:"wrap" }}>
+        <div style={{ position:"relative",flex:1,minWidth:200 }}>
+          <span style={{ position:"absolute",left:9,top:"50%",transform:"translateY(-50%)",fontSize:13,color:"#9aa8b8" }}>🔍</span>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search tasks..."
+            style={{ ...inputS,paddingLeft:28 }} />
+        </div>
+        {[
+          [filterStatus,  setFilterStatus,  [["all","All Status"],["todo","To Do"],["inprogress","In Progress"],["overdue","Overdue"],["done","Done"]]],
+          [filterPriority,setFilterPriority,[["all","All Priority"],["urgent","Urgent"],["high","High"],["medium","Medium"],["low","Low"]]],
+          [filterClient,  setFilterClient,  [["all","All Clients"],...allClients.map(c=>[c.id,c.name])]],
+        ].map(([val,setter,opts],i)=>(
+          <select key={i} value={val} onChange={e=>setter(e.target.value)} style={{ ...selS,minWidth:130,flex:"0 0 auto" }}>
+            {opts.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+          </select>
+        ))}
+      </div>
+
+      {/* New / edit task form */}
+      {showForm && (
+        <div style={{ background:"#fff",border:"1px solid #e0e6ef",borderRadius:12,padding:"18px 20px",marginBottom:20,boxShadow:"0 4px 20px rgba(0,0,0,0.08)" }}>
+          <div style={{ fontSize:13,fontWeight:700,color:"#1a2a3a",marginBottom:14 }}>{editTask?"✏️ Edit Task":"+ New Task"}</div>
+          <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10 }}>
+            <div style={{ gridColumn:"1/-1" }}>
+              <input value={newTask.title} onChange={e=>setNewTask(p=>({...p,title:e.target.value}))} placeholder="Task title *" style={inputS} />
+            </div>
+            <select value={newTask.clientId} onChange={e=>setNewTask(p=>({...p,clientId:e.target.value}))} style={selS}>
+              <option value="">No specific client</option>
+              {allClients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <input type="date" value={newTask.due} onChange={e=>setNewTask(p=>({...p,due:e.target.value}))} style={inputS} />
+            <select value={newTask.priority} onChange={e=>setNewTask(p=>({...p,priority:e.target.value}))} style={selS}>
+              {["urgent","high","medium","low"].map(v=><option key={v} value={v}>{v.charAt(0).toUpperCase()+v.slice(1)}</option>)}
+            </select>
+            <select value={newTask.category} onChange={e=>setNewTask(p=>({...p,category:e.target.value}))} style={selS}>
+              {Object.entries(CAT_IC).map(([v,ic])=><option key={v} value={v}>{ic} {v.charAt(0).toUpperCase()+v.slice(1)}</option>)}
+            </select>
+            <div style={{ gridColumn:"1/-1" }}>
+              <textarea value={newTask.notes} onChange={e=>setNewTask(p=>({...p,notes:e.target.value}))} placeholder="Notes..." rows={2}
+                style={{ ...inputS,resize:"vertical",fontFamily:"inherit" }} />
+            </div>
+          </div>
+          <div style={{ display:"flex",gap:8,justifyContent:"flex-end" }}>
+            <button onClick={()=>{setShowForm(false);setEditTask(null);}} style={{ padding:"7px 16px",borderRadius:7,border:"1px solid #d0dae6",background:"#fff",color:"#6b7a8d",fontSize:12,cursor:"pointer" }}>Cancel</button>
+            <button onClick={saveTask} style={{ padding:"7px 18px",borderRadius:7,border:"none",background:"#1a4a7a",color:"#fff",fontSize:12,fontWeight:700,cursor:"pointer" }}>Save Task</button>
+          </div>
+        </div>
+      )}
+
+      {/* Task list */}
+      <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
+        {filtered.length===0 && (
+          <div style={{ textAlign:"center",padding:"40px",color:"#9aa8b8",background:"#fff",borderRadius:12,border:"1px solid #e8edf2" }}>
+            <div style={{ fontSize:32,marginBottom:8 }}>✅</div>
+            <div style={{ fontSize:13,fontWeight:600 }}>No tasks match your filters</div>
+          </div>
+        )}
+        {filtered.map(task=>{
+          const PC = PRIORITY_C[task.priority]||PRIORITY_C.medium;
+          const SC = STATUS_C[task.status]||STATUS_C.todo;
+          const isOverdue = task.status!=="done" && task.due && new Date(task.due) < new Date("2025-01-16");
+          return (
+            <div key={task.id} style={{ background:"#fff",border:"1px solid #e8edf2",borderRadius:12,padding:"14px 16px",display:"flex",gap:12,alignItems:"flex-start",transition:"box-shadow 0.15s",borderLeft:`4px solid ${PC.dot}` }}
+              onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,0.08)"}
+              onMouseLeave={e=>e.currentTarget.style.boxShadow="none"}>
+
+              {/* Status toggle circle */}
+              <button onClick={()=>cycleStatus(task.id)} title="Click to advance status"
+                style={{ width:22,height:22,borderRadius:"50%",border:`2px solid ${SC.text}`,background:task.status==="done"?SC.text:"transparent",cursor:"pointer",flexShrink:0,marginTop:2,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:task.status==="done"?"#fff":SC.text,transition:"all 0.15s" }}>
+                {task.status==="done"?"✓":""}
+              </button>
+
+              <div style={{ flex:1,minWidth:0 }}>
+                <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:4,flexWrap:"wrap" }}>
+                  <span style={{ fontSize:13,fontWeight:700,color:task.status==="done"?"#9aa8b8":"#1a2a3a",textDecoration:task.status==="done"?"line-through":"none" }}>{task.title}</span>
+                  {isOverdue && task.status!=="done" && <span style={{ fontSize:10,background:"#fdedec",color:"#922b21",padding:"1px 6px",borderRadius:5,fontWeight:700 }}>OVERDUE</span>}
+                </div>
+                <div style={{ display:"flex",gap:6,flexWrap:"wrap",alignItems:"center",marginBottom:task.notes?6:0 }}>
+                  {/* Source badge */}
+                  <div style={{ fontSize:10,padding:"2px 7px",borderRadius:6,background:"#f0f4f8",color:"#6b7a8d",fontWeight:600 }}>
+                    {SOURCE_IC[task.source]} {TASK_SOURCES[task.source]}
+                    {task.crmRef && <span style={{ opacity:0.6 }}> · {task.crmRef}</span>}
+                    {task.wdRef  && <span style={{ opacity:0.6 }}> · {task.wdRef}</span>}
+                  </div>
+                  {/* Category */}
+                  <div style={{ fontSize:10,padding:"2px 7px",borderRadius:6,background:"#f7f9fc",color:"#4a5568" }}>{CAT_IC[task.category]} {task.category}</div>
+                  {/* Client */}
+                  {task.clientName && <div style={{ fontSize:10,padding:"2px 7px",borderRadius:6,background:"#eaf0ff",color:"#1a4a7a" }}>🏢 {task.clientName}</div>}
+                  {/* Assignee */}
+                  <div style={{ fontSize:10,color:"#9aa8b8" }}>→ {task.assignee}</div>
+                </div>
+                {task.notes && <div style={{ fontSize:11,color:"#6b7a8d",lineHeight:1.5,fontStyle:"italic" }}>{task.notes}</div>}
+              </div>
+
+              {/* Right: due + priority + status */}
+              <div style={{ display:"flex",flexDirection:"column",alignItems:"flex-end",gap:5,flexShrink:0 }}>
+                {task.due && <div style={{ fontSize:11,color:isOverdue&&task.status!=="done"?"#922b21":"#9aa8b8",fontWeight:isOverdue?700:400 }}>📅 {task.due}</div>}
+                <div style={{ fontSize:10,padding:"2px 8px",borderRadius:6,background:PC.bg,color:PC.text,fontWeight:700 }}>{PC.label}</div>
+                <div style={{ fontSize:10,padding:"2px 8px",borderRadius:6,background:SC.bg,color:SC.text,fontWeight:600 }}>{SC.label}</div>
+                <button onClick={()=>openEdit(task)} style={{ fontSize:10,color:"#9aa8b8",background:"none",border:"none",cursor:"pointer",padding:0 }}>edit</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Customers (CRM) Page ──────────────────────────────────────────────────────
+function CustomersPage({ user, allClients, setPage }) {
+  const [search,       setSearch]       = useState("");
+  const [filterStage,  setFilterStage]  = useState("all");
+  const [filterHealth, setFilterHealth] = useState("all");
+  const [sortBy,       setSortBy]       = useState("name");
+  const [selectedCust, setSelectedCust] = useState(null);
+  const [custTab,      setCustTab]      = useState("overview");
+
+  const STAGE_C = {
+    "Active":      { bg:"#eafaf1",text:"#1e8449",dot:"#27ae60" },
+    "At Risk":     { bg:"#fef9e7",text:"#9a6e00",dot:"#f39c12" },
+    "Overdue":     { bg:"#fdedec",text:"#922b21",dot:"#e74c3c" },
+    "New Contact": { bg:"#eaf0ff",text:"#1a4a7a",dot:"#3b82f6" },
+  };
+  const HEALTH_C = { green:{dot:"#27ae60",label:"On Track"}, yellow:{dot:"#f39c12",label:"Due Soon"}, red:{dot:"#e74c3c",label:"Overdue"} };
+
+  const clients = allClients.map(c => ({...c, crm: CRM_DETAIL[c.id]||{stage:"Active",contractValue:50000,contractStart:"2023-01-01",contractEnd:"2026-01-01",renewalProb:75,lastContact:"2025-01-01",nextAction:"Follow up",satisfaction:4.0,interactions:[]}}));
+
+  const filtered = clients.filter(c => {
+    if (filterStage!=="all"  && c.crm.stage!==filterStage)  return false;
+    if (filterHealth!=="all" && c.health!==filterHealth)    return false;
+    if (search) {
+      const q=search.toLowerCase();
+      return c.name.toLowerCase().includes(q)||c.industry.toLowerCase().includes(q)||c.contact.toLowerCase().includes(q);
+    }
+    return true;
+  }).sort((a,b)=>{
+    if (sortBy==="name")       return a.name.localeCompare(b.name);
+    if (sortBy==="value")      return (b.crm.contractValue||0)-(a.crm.contractValue||0);
+    if (sortBy==="renewal")    return (b.crm.renewalProb||0)-(a.crm.renewalProb||0);
+    if (sortBy==="employees")  return b.employees-a.employees;
+    return 0;
+  });
+
+  const totalACV = clients.reduce((s,c)=>s+(c.crm.contractValue||0),0);
+  const atRisk   = clients.filter(c=>c.crm.stage==="At Risk"||c.crm.stage==="Overdue").length;
+  const avgSat   = (clients.reduce((s,c)=>s+(c.crm.satisfaction||0),0)/clients.length).toFixed(1);
+  const avgRenew = Math.round(clients.reduce((s,c)=>s+(c.crm.renewalProb||0),0)/clients.length);
+
+  const detail = selectedCust ? clients.find(c=>c.id===selectedCust) : null;
+  const dCRM   = detail?.crm;
+
+  return (
+    <div style={{ padding:"24px 28px",maxWidth:1300,margin:"0 auto" }}>
+      {/* Header */}
+      <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12 }}>
+        <div>
+          <h1 style={{ fontSize:24,fontWeight:700,color:"#1a2a3a",fontFamily:"'Georgia',serif",margin:0 }}>🏢 Customers</h1>
+          <p style={{ fontSize:13,color:"#6b7a8d",marginTop:4 }}>CRM account management — synced with Microsoft Dynamics 365</p>
+        </div>
+        <div style={{ display:"flex",alignItems:"center",gap:6 }}>
+          <div style={{ width:7,height:7,borderRadius:"50%",background:"#27ae60" }} />
+          <span style={{ fontSize:11,color:"#6b7a8d" }}>Dynamics 365 connected</span>
+        </div>
+      </div>
+
+      {/* KPIs */}
+      <div style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:20 }}>
+        {[
+          {label:"Total ACV",        val:`$${(totalACV/1000).toFixed(0)}K`,  sub:"annual contract value",    col:"#1a4a7a",bg:"#eaf0ff"},
+          {label:"Active Accounts",  val:clients.filter(c=>c.crm.stage==="Active").length, sub:"of "+clients.length+" total", col:"#1e8449",bg:"#eafaf1"},
+          {label:"At Risk",          val:atRisk,                              sub:"need immediate attention",  col:"#922b21",bg:"#fdedec"},
+          {label:"Avg Satisfaction", val:avgSat+"★",                          sub:`${avgRenew}% avg renewal prob`, col:"#9a6e00",bg:"#fef9e7"},
+        ].map((k,i)=>(
+          <div key={i} style={{ background:k.bg,border:`1px solid ${k.col}22`,borderRadius:10,padding:"14px 16px",borderTop:`3px solid ${k.col}` }}>
+            <div style={{ fontSize:26,fontWeight:700,color:k.col,fontFamily:"'Georgia',serif",lineHeight:1 }}>{k.val}</div>
+            <div style={{ fontSize:10,fontWeight:700,color:k.col,textTransform:"uppercase",letterSpacing:"0.06em",marginTop:5 }}>{k.label}</div>
+            <div style={{ fontSize:10,color:"#9aa8b8",marginTop:2 }}>{k.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display:"grid",gridTemplateColumns:selectedCust?"1fr 420px":"1fr",gap:16,alignItems:"start" }}>
+        {/* Left: account list */}
+        <div>
+          {/* Search + filters */}
+          <div style={{ display:"flex",gap:8,marginBottom:14,flexWrap:"wrap" }}>
+            <div style={{ position:"relative",flex:1,minWidth:180 }}>
+              <span style={{ position:"absolute",left:9,top:"50%",transform:"translateY(-50%)",fontSize:13,color:"#9aa8b8" }}>🔍</span>
+              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search accounts..."
+                style={{ width:"100%",padding:"7px 10px 7px 28px",borderRadius:8,border:"1px solid #d0dae6",fontSize:12,outline:"none",boxSizing:"border-box" }} />
+            </div>
+            <select value={filterStage} onChange={e=>setFilterStage(e.target.value)}
+              style={{ padding:"7px 10px",borderRadius:8,border:"1px solid #d0dae6",fontSize:12,cursor:"pointer",background:"#fff" }}>
+              <option value="all">All Stages</option>
+              {["Active","At Risk","Overdue","New Contact"].map(s=><option key={s} value={s}>{s}</option>)}
+            </select>
+            <select value={filterHealth} onChange={e=>setFilterHealth(e.target.value)}
+              style={{ padding:"7px 10px",borderRadius:8,border:"1px solid #d0dae6",fontSize:12,cursor:"pointer",background:"#fff" }}>
+              <option value="all">All Health</option>
+              <option value="green">On Track</option>
+              <option value="yellow">Due Soon</option>
+              <option value="red">Overdue</option>
+            </select>
+            <select value={sortBy} onChange={e=>setSortBy(e.target.value)}
+              style={{ padding:"7px 10px",borderRadius:8,border:"1px solid #d0dae6",fontSize:12,cursor:"pointer",background:"#fff" }}>
+              <option value="name">Sort: Name</option>
+              <option value="value">Sort: Contract Value</option>
+              <option value="renewal">Sort: Renewal Prob</option>
+              <option value="employees">Sort: Employees</option>
+            </select>
+          </div>
+
+          {/* Account table */}
+          <div style={{ background:"#fff",borderRadius:12,border:"1px solid #e8edf2",overflow:"hidden" }}>
+            <div style={{ display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 80px",padding:"10px 16px",background:"#f7f9fc",borderBottom:"1px solid #e8edf2",gap:8 }}>
+              {["Account","Stage","Contract Value","Employees","Renewal Prob","Health"].map(h=>(
+                <div key={h} style={{ fontSize:10,fontWeight:700,color:"#9aa8b8",textTransform:"uppercase",letterSpacing:"0.07em" }}>{h}</div>
+              ))}
+            </div>
+            {filtered.map(c=>{
+              const SC = STAGE_C[c.crm.stage]||STAGE_C["Active"];
+              const HC = HEALTH_C[c.health]||HEALTH_C.green;
+              const isSelected = selectedCust===c.id;
+              return (
+                <div key={c.id} onClick={()=>{ setSelectedCust(isSelected?null:c.id); setCustTab("overview"); }}
+                  style={{ display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 80px",padding:"12px 16px",borderBottom:"1px solid #f0f4f8",gap:8,cursor:"pointer",background:isSelected?"#f0f4ff":"#fff",alignItems:"center",transition:"background 0.12s" }}
+                  onMouseEnter={e=>{ if(!isSelected) e.currentTarget.style.background="#f7f9fc"; }}
+                  onMouseLeave={e=>{ if(!isSelected) e.currentTarget.style.background="#fff"; }}>
+                  <div style={{ display:"flex",alignItems:"center",gap:10 }}>
+                    <div style={{ width:34,height:34,borderRadius:9,background:c.color+"22",border:`1.5px solid ${c.color}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:c.color,flexShrink:0 }}>{c.logo}</div>
+                    <div>
+                      <div style={{ fontSize:13,fontWeight:700,color:"#1a2a3a" }}>{c.name}</div>
+                      <div style={{ fontSize:10,color:"#9aa8b8" }}>{c.industry} · {c.contact}</div>
+                    </div>
+                  </div>
+                  <div style={{ fontSize:11,padding:"3px 8px",borderRadius:7,background:SC.bg,color:SC.text,fontWeight:600,display:"inline-block" }}>{c.crm.stage}</div>
+                  <div style={{ fontSize:13,fontWeight:700,color:"#1a2a3a" }}>${(c.crm.contractValue/1000).toFixed(0)}K</div>
+                  <div style={{ fontSize:12,color:"#4a5568" }}>{c.employees.toLocaleString()}</div>
+                  <div style={{ display:"flex",alignItems:"center",gap:6 }}>
+                    <div style={{ flex:1,height:6,background:"#f0f4f8",borderRadius:3,overflow:"hidden" }}>
+                      <div style={{ height:"100%",width:`${c.crm.renewalProb}%`,background:c.crm.renewalProb>=80?"#27ae60":c.crm.renewalProb>=60?"#f39c12":"#e74c3c",borderRadius:3 }} />
+                    </div>
+                    <span style={{ fontSize:11,color:"#6b7a8d",flexShrink:0 }}>{c.crm.renewalProb}%</span>
+                  </div>
+                  <div style={{ display:"flex",alignItems:"center",gap:5 }}>
+                    <div style={{ width:8,height:8,borderRadius:"50%",background:HC.dot }} />
+                    <span style={{ fontSize:10,color:"#6b7a8d" }}>{HC.label}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Right: account detail panel */}
+        {detail && dCRM && (
+          <div style={{ background:"#fff",borderRadius:14,border:"1px solid #e8edf2",overflow:"hidden",position:"sticky",top:50,boxShadow:"0 4px 24px rgba(0,0,0,0.08)" }}>
+            {/* Detail header */}
+            <div style={{ background:`linear-gradient(135deg,${detail.color} 0%,${detail.color}bb 100%)`,padding:"16px 18px",color:"#fff" }}>
+              <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between" }}>
+                <div style={{ display:"flex",alignItems:"center",gap:10 }}>
+                  <div style={{ width:42,height:42,borderRadius:10,background:"rgba(255,255,255,0.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800,flexShrink:0 }}>{detail.logo}</div>
+                  <div>
+                    <div style={{ fontSize:16,fontWeight:700,fontFamily:"'Georgia',serif" }}>{detail.name}</div>
+                    <div style={{ fontSize:11,opacity:0.8 }}>{detail.industry} · {detail.employees.toLocaleString()} employees</div>
+                  </div>
+                </div>
+                <button onClick={()=>setSelectedCust(null)} style={{ background:"rgba(255,255,255,0.18)",border:"none",borderRadius:7,width:26,height:26,cursor:"pointer",color:"#fff",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center" }}>✕</button>
+              </div>
+            </div>
+
+            {/* Tabs */}
+            <div style={{ display:"flex",borderBottom:"1px solid #f0f4f8",background:"#f7f9fc" }}>
+              {["overview","contacts","activity","chaplains"].map(tab=>(
+                <button key={tab} onClick={()=>setCustTab(tab)}
+                  style={{ flex:1,padding:"9px 4px",border:"none",background:"transparent",fontSize:11,fontWeight:custTab===tab?700:400,color:custTab===tab?"#1a4a7a":"#9aa8b8",cursor:"pointer",borderBottom:custTab===tab?"2px solid #1a4a7a":"2px solid transparent",textTransform:"capitalize" }}>
+                  {tab}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ padding:"16px 18px",maxHeight:480,overflowY:"auto" }}>
+              {custTab==="overview" && (
+                <div>
+                  {/* Contract KPIs */}
+                  <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:14 }}>
+                    {[
+                      ["Contract Value",`$${(dCRM.contractValue/1000).toFixed(0)}K ACV`],
+                      ["Renewal Prob",`${dCRM.renewalProb}%`],
+                      ["Contract End",dCRM.contractEnd],
+                      ["Satisfaction",`${dCRM.satisfaction}★ / 5`],
+                    ].map(([l,v])=>(
+                      <div key={l} style={{ background:"#f7f9fc",borderRadius:8,padding:"10px 12px" }}>
+                        <div style={{ fontSize:10,color:"#9aa8b8",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:3 }}>{l}</div>
+                        <div style={{ fontSize:15,fontWeight:700,color:"#1a2a3a" }}>{v}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Stage + next action */}
+                  <div style={{ background:(STAGE_C[dCRM.stage]||STAGE_C["Active"]).bg,border:`1px solid ${(STAGE_C[dCRM.stage]||STAGE_C["Active"]).dot}44`,borderRadius:9,padding:"10px 12px",marginBottom:12 }}>
+                    <div style={{ fontSize:10,fontWeight:700,color:(STAGE_C[dCRM.stage]||STAGE_C["Active"]).text,textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:3 }}>CRM Stage · {dCRM.stage}</div>
+                    <div style={{ fontSize:12,color:"#2c3e50" }}>Next action: <strong>{dCRM.nextAction}</strong></div>
+                    <div style={{ fontSize:11,color:"#9aa8b8",marginTop:2 }}>Last contact: {dCRM.lastContact}</div>
+                  </div>
+                  {/* Renewal bar */}
+                  <div style={{ marginBottom:4 }}>
+                    <div style={{ display:"flex",justifyContent:"space-between",fontSize:11,color:"#6b7a8d",marginBottom:4 }}>
+                      <span>Renewal Probability</span><span style={{ fontWeight:700 }}>{dCRM.renewalProb}%</span>
+                    </div>
+                    <div style={{ height:8,background:"#f0f4f8",borderRadius:4,overflow:"hidden" }}>
+                      <div style={{ height:"100%",width:`${dCRM.renewalProb}%`,background:dCRM.renewalProb>=80?"#27ae60":dCRM.renewalProb>=60?"#f39c12":"#e74c3c",borderRadius:4 }} />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {custTab==="contacts" && (
+                <div>
+                  <div style={{ background:"#f7f9fc",borderRadius:10,padding:"12px 14px",marginBottom:10 }}>
+                    <div style={{ fontSize:10,color:"#9aa8b8",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6 }}>Primary Contact</div>
+                    <div style={{ fontSize:14,fontWeight:700,color:"#1a2a3a" }}>{detail.contact}</div>
+                    <div style={{ fontSize:12,color:"#6b7a8d",marginTop:2 }}>{detail.contactTitle}</div>
+                    <div style={{ fontSize:12,color:"#3b82f6",marginTop:2 }}>{detail.contactEmail}</div>
+                    <div style={{ display:"flex",gap:8,marginTop:10 }}>
+                      <button style={{ flex:1,padding:"7px",borderRadius:7,border:"1px solid #d0dae6",background:"#fff",fontSize:11,cursor:"pointer",color:"#1a4a7a",fontWeight:600 }}>✉️ Email</button>
+                      <button style={{ flex:1,padding:"7px",borderRadius:7,border:"1px solid #d0dae6",background:"#fff",fontSize:11,cursor:"pointer",color:"#1a4a7a",fontWeight:600 }}>📞 Call</button>
+                      <button style={{ flex:1,padding:"7px",borderRadius:7,border:"none",background:"#1a4a7a",fontSize:11,cursor:"pointer",color:"#fff",fontWeight:600 }}>⚡ CRM</button>
+                    </div>
+                  </div>
+                  <div style={{ background:"#f7f9fc",borderRadius:10,padding:"12px 14px" }}>
+                    <div style={{ fontSize:10,color:"#9aa8b8",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6 }}>Account EDO</div>
+                    <div style={{ fontSize:13,fontWeight:600,color:"#1a2a3a" }}>{detail.edoName||"Sarah Mitchell"}</div>
+                    <div style={{ fontSize:11,color:"#6b7a8d",marginTop:1 }}>Executive Director of Operations</div>
+                  </div>
+                </div>
+              )}
+
+              {custTab==="activity" && (
+                <div>
+                  <div style={{ fontSize:11,color:"#9aa8b8",marginBottom:10,fontStyle:"italic" }}>Recent CRM activity — synced from Dynamics 365</div>
+                  {(dCRM.interactions||[]).map((act,i)=>(
+                    <div key={i} style={{ display:"flex",gap:10,alignItems:"flex-start",marginBottom:12,paddingBottom:12,borderBottom:i<(dCRM.interactions.length-1)?"1px solid #f0f4f8":"none" }}>
+                      <div style={{ width:8,height:8,borderRadius:"50%",background:"#3b82f6",marginTop:5,flexShrink:0 }} />
+                      <div>
+                        <div style={{ fontSize:12,fontWeight:700,color:"#1a2a3a" }}>{act.type}</div>
+                        <div style={{ fontSize:11,color:"#9aa8b8",marginTop:1 }}>{act.date} · {act.by}</div>
+                      </div>
+                    </div>
+                  ))}
+                  {(!dCRM.interactions||dCRM.interactions.length===0) && (
+                    <div style={{ fontSize:12,color:"#9aa8b8",fontStyle:"italic" }}>No recent activity logged.</div>
+                  )}
+                </div>
+              )}
+
+              {custTab==="chaplains" && (
+                <div>
+                  <div style={{ fontSize:11,color:"#9aa8b8",marginBottom:10,fontStyle:"italic" }}>{detail.chaplains} chaplain{detail.chaplains!==1?"s":""} assigned to this account</div>
+                  {(detail.chaplainNames||[]).map((name,i)=>(
+                    <div key={i} style={{ display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background:"#f7f9fc",borderRadius:9,marginBottom:8 }}>
+                      <div style={{ width:34,height:34,borderRadius:"50%",background:"#1a4a7a22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:"#1a4a7a" }}>
+                        {name.split(" ").slice(-1)[0].charAt(0)}
+                      </div>
+                      <div>
+                        <div style={{ fontSize:12,fontWeight:700,color:"#1a2a3a" }}>{name}</div>
+                        <div style={{ fontSize:10,color:"#9aa8b8" }}>Assigned Chaplain</div>
+                      </div>
+                      <div style={{ marginLeft:"auto",width:7,height:7,borderRadius:"50%",background:"#27ae60" }} title="Active" />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
 // ── Shared in-memory store (demo) ─────────────────────────────────────────────
 // In production these would be API calls. For demo, module-level so all "users" share state.
 const ANNOUNCEMENTS_STORE = [
@@ -4060,13 +4586,16 @@ function AppShell({ page, setPage, user, setUser, lang, setLang, children }) {
     { id:"visits",    label:"Visit Log",   emoji:"📒", group:"main"    },
     { id:"hours",     label:"Hours",       emoji:"🕐", group:"main"    },
     ...(user.role !== "Chaplain" ? [
+      { id:"tasks",     label:"Tasks",       emoji:"✅", group:"main"    },
       { id:"ecr",       label:"ECR Builder", emoji:"✏️",  group:"reports" },
       { id:"chaplains", label:"Chaplains",   emoji:"🤝", group:"reports" },
+      { id:"customers", label:"Customers",   emoji:"🏢", group:"manage"  },
     ] : []),
   ];
   const GROUPS = [
     { key:"main",    label:"Workspace"  },
     { key:"reports", label:"Analytics"  },
+    { key:"manage",  label:"Management" },
   ];
   const LANG_NAMES = { en:"English", es:"Español", fr:"Français" };
   const sideW = collapsed ? 64 : 220;
@@ -4479,6 +5008,22 @@ export default function App() {
   const allClients = getClientsForUser(user);
 
   // All pages use AppShell
+  if (page === "tasks") {
+    return (
+      <AppShell page={page} setPage={setPage} user={user} setUser={setUser} lang={lang} setLang={setLang}>
+        <TasksPage user={user} allClients={allClients} />
+      </AppShell>
+    );
+  }
+
+  if (page === "customers") {
+    return (
+      <AppShell page={page} setPage={setPage} user={user} setUser={setUser} lang={lang} setLang={setLang}>
+        <CustomersPage user={user} allClients={allClients} setPage={setPage} />
+      </AppShell>
+    );
+  }
+
   if (page === "hours") {
     return (
       <AppShell page={page} setPage={setPage} user={user} setUser={setUser} lang={lang} setLang={setLang}>
