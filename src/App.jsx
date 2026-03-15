@@ -108,6 +108,13 @@ const ALL_CLIENTS_FLAT = [
 function getClientsForUser(user) {
   if (!user) return [];
   if (user.role === "VP" || user.role === "Exec") return ALL_CLIENTS_FLAT;
+  if (user.role === "Chaplain") {
+    // Return only clients where this chaplain is assigned
+    const lastName = user.name.split(" ").slice(-1)[0];
+    return ALL_CLIENTS_FLAT.filter(c =>
+      (c.chaplainNames || []).some(n => n.includes(lastName))
+    );
+  }
   return CRM_CLIENTS[user.id] || [];
 }
 
@@ -1801,7 +1808,7 @@ function OnSiteVisitDrawer({ client, user, onClose }) {
           {step === 1 && (
             <div style={{ padding:"24px" }}>
               <div style={{ background:cardBg,borderRadius:14,border:`1px solid ${borderCol}`,padding:"22px 22px",marginBottom:16 }}>
-                <SectionTitle>When & Where</SectionTitle>
+                <SectionTitle>When &amp; Where</SectionTitle>
                 <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14 }}>
                   <div>
                     <BigLabel required>Date of Visit</BigLabel>
@@ -3368,8 +3375,6 @@ function VisitLogPage({ user, allClients, onBack }) {
   const myVisits = allVisits.filter(v => {
     if (user.role === "VP" || user.role === "Exec") return true;
     if (user.role === "Chaplain") {
-      // Chaplain sees visits where their shortened name appears
-      const shortName = user.name.replace("Rev. ","Rev. ").replace("Chap. ","Chap. ");
       return v.chaplains.some(c => c.includes(user.name.split(" ").slice(-1)[0]));
     }
     // EDO — see visits for their clients
@@ -3625,17 +3630,20 @@ function HoursCalendarPage({ user, allClients }) {
   const [clientFilter, setClientFilter] = useState("all");
 
   // Role-scoped: allClients is already pre-filtered per role by the App component
-  // so we just match visits to any client in allClients
   const clientIds = new Set(allClients.map(c => c.id));
   const scopedVisits = visits.filter(v => clientIds.has(v.clientId));
 
-  // All chaplains across these clients for the filter dropdown
+  // For chaplains, lock to their own name. Others get a dropdown.
+  const isChaplain = user.role === "Chaplain";
   const allChaplains = Array.from(new Set(allClients.flatMap(c => c.chaplainNames || []))).sort();
-  const [chaplainFilter, setChaplainFilter] = useState("all");
+  const [chaplainFilter, setChaplainFilter] = useState(isChaplain ? user.name : "all");
 
   const filteredVisits = scopedVisits
     .filter(v => clientFilter === "all"   || v.clientId === clientFilter)
-    .filter(v => chaplainFilter === "all" || v.chaplains.includes(chaplainFilter));
+    .filter(v => {
+      if (isChaplain) return v.chaplains.some(c => c.includes(user.name.split(" ").slice(-1)[0]));
+      return chaplainFilter === "all" || v.chaplains.includes(chaplainFilter);
+    });
 
   // Build date → visits map
   const visitsByDate = {};
@@ -3721,12 +3729,18 @@ function HoursCalendarPage({ user, allClients }) {
             <option value="all">All Clients</option>
             {allClients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          {/* Chaplain filter */}
-          <select value={chaplainFilter} onChange={e=>{setChaplainFilter(e.target.value);setSelectedDay(null);}}
-            style={{ padding:"7px 12px",borderRadius:8,border:"1px solid #d0dae6",fontSize:12,color:"#1a2a3a",background:"#fff",cursor:"pointer" }}>
-            <option value="all">All Chaplains</option>
-            {allChaplains.map(ch=><option key={ch} value={ch}>{ch}</option>)}
-          </select>
+          {/* Chaplain filter — hidden for chaplain role (they only see their own) */}
+          {isChaplain ? (
+            <div style={{ padding:"7px 12px",borderRadius:8,border:"1px solid #d0dae6",fontSize:12,color:"#1a4a7a",background:"#eaf0ff",fontWeight:600 }}>
+              🧑‍⚕️ {user.name}
+            </div>
+          ) : (
+            <select value={chaplainFilter} onChange={e=>{setChaplainFilter(e.target.value);setSelectedDay(null);}}
+              style={{ padding:"7px 12px",borderRadius:8,border:"1px solid #d0dae6",fontSize:12,color:"#1a2a3a",background:"#fff",cursor:"pointer" }}>
+              <option value="all">All Chaplains</option>
+              {allChaplains.map(ch=><option key={ch} value={ch}>{ch}</option>)}
+            </select>
+          )}
         </div>
       </div>
 
@@ -3983,19 +3997,72 @@ function HoursCalendarPage({ user, allClients }) {
 }
 
 // ── App Shell (Sidebar Nav) ───────────────────────────────────────────────────
+// ── Shared in-memory store (demo) ─────────────────────────────────────────────
+// In production these would be API calls. For demo, module-level so all "users" share state.
+const ANNOUNCEMENTS_STORE = [
+  { id:"a1", author:"Jane Doe", role:"Exec", ts:"2025-01-13T09:00:00", urgent:true,
+    text:"Important: All ECR reports for Q4 2024 are due by January 31st. Please ensure your chaplain teams have submitted all visit logs before the deadline. Reach out to your EDO with any questions." },
+  { id:"a2", author:"David Huang", role:"VP", ts:"2025-01-10T14:30:00", urgent:false,
+    text:"Reminder: The national chaplain training day is scheduled for February 14th. Registration links have been sent to all team leads. Please confirm attendance by end of week." },
+];
+
+const TEAM_HUB_STORE = [
+  { id:"h1", type:"prayer", author:"Rev. T. Moore", role:"Chaplain", clientName:"Acme Manufacturing", clientId:"c1",
+    ts:"2025-01-14T08:20:00", pinned:true,
+    title:"Employee facing serious illness",
+    body:"Asking for prayer for an employee on the floor who was recently diagnosed with cancer. Family is also struggling. He has been very open with our team and asked specifically for prayer from the chaplain community.", tags:["health","family"] },
+  { id:"h2", type:"note", author:"Sarah Mitchell", role:"EDO", clientName:"Acme Manufacturing", clientId:"c1",
+    ts:"2025-01-13T16:45:00", pinned:false,
+    title:"Leadership visit scheduled Jan 22",
+    body:"Heads up — the client's VP of HR will be on-site on January 22nd and has asked to meet briefly with the chaplain team. Please be prepared to share a brief overview of the program's impact this quarter.", tags:["client","meeting"] },
+  { id:"h3", type:"prayer", author:"Chap. D. Allen", role:"Chaplain", clientName:"Sunrise Health Systems", clientId:"c2",
+    ts:"2025-01-12T11:00:00", pinned:false,
+    title:"Grief — loss in the ICU team",
+    body:"Three nurses in the ICU lost a patient they had cared for over several months. The team is grieving together. Chaplain presence has been welcomed. Please lift them up — they are carrying a lot this week.", tags:["grief","healthcare"] },
+  { id:"h4", type:"note", author:"Chap. M. Osei", role:"Chaplain", clientName:"Sunrise Health Systems", clientId:"c2",
+    ts:"2025-01-11T09:15:00", pinned:false,
+    title:"New night shift access approved",
+    body:"Good news — administration has approved chaplain access to the night shift (11pm–7am) starting next week. This has been a long-standing request. Coordinate with Rev. Davis on rotation.", tags:["logistics","access"] },
+  { id:"h5", type:"prayer", author:"Rev. K. Thomas", role:"Chaplain", clientName:"Pinnacle Logistics", clientId:"c5",
+    ts:"2025-01-09T13:30:00", pinned:false,
+    title:"Employee dealing with housing crisis",
+    body:"One of our regulars at the warehouse is facing eviction. He has two kids. We have connected him with resources but the situation is urgent. Please pray for stability and provision for his family.", tags:["financial","family"] },
+];
+let hubNextId = 100;
+let annNextId = 10;
+
 function AppShell({ page, setPage, user, setUser, lang, setLang, children }) {
   const [collapsed, setCollapsed] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
+  const [hubOpen, setHubOpen] = useState(false);
+  const [hubTab, setHubTab] = useState("all");        // "all"|"prayer"|"note"
+  const [hubFilter, setHubFilter] = useState("all");  // "all" | clientId
+  const [newType, setNewType] = useState("prayer");
+  const [newTitle, setNewTitle] = useState("");
+  const [newBody, setNewBody] = useState("");
+  const [newClient, setNewClient] = useState("all");
+  const [showNewForm, setShowNewForm] = useState(false);
+  const [announcements, setAnnouncements] = useState(ANNOUNCEMENTS_STORE);
+  const [hubItems, setHubItems] = useState(TEAM_HUB_STORE);
+  const [dismissedBanners, setDismissedBanners] = useState(new Set());
+  const [showNewAnn, setShowNewAnn] = useState(false);
+  const [newAnnText, setNewAnnText] = useState("");
+  const [newAnnUrgent, setNewAnnUrgent] = useState(false);
   const cc = "#1a4a7a";
   const lx = LANG[lang] || LANG.en;
+  const allClients = getClientsForUser(user);
+  const myClientIds = new Set(allClients.map(c => c.id));
+  const canPost = user.role === "Exec" || user.role === "VP";
 
   const NAV = [
     { id:"dashboard", label:"Dashboard",   emoji:"🏠", group:"main"    },
     { id:"visits",    label:"Visit Log",   emoji:"📒", group:"main"    },
     { id:"hours",     label:"Hours",       emoji:"🕐", group:"main"    },
-    { id:"ecr",       label:"ECR Builder", emoji:"✏️",  group:"reports" },
-    { id:"chaplains", label:"Chaplains",   emoji:"🤝", group:"reports" },
+    ...(user.role !== "Chaplain" ? [
+      { id:"ecr",       label:"ECR Builder", emoji:"✏️",  group:"reports" },
+      { id:"chaplains", label:"Chaplains",   emoji:"🤝", group:"reports" },
+    ] : []),
   ];
   const GROUPS = [
     { key:"main",    label:"Workspace"  },
@@ -4003,6 +4070,395 @@ function AppShell({ page, setPage, user, setUser, lang, setLang, children }) {
   ];
   const LANG_NAMES = { en:"English", es:"Español", fr:"Français" };
   const sideW = collapsed ? 64 : 220;
+
+  // Visible announcements (not dismissed)
+  const visibleAnn = announcements.filter(a => !dismissedBanners.has(a.id));
+
+  // Hub items scoped to user's clients
+  const scopedHub = hubItems.filter(h =>
+    h.clientId === "all" || myClientIds.has(h.clientId)
+  ).filter(h =>
+    hubTab === "all" || h.type === hubTab
+  ).filter(h =>
+    hubFilter === "all" || h.clientId === hubFilter
+  ).sort((a,b) => {
+    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+    return b.ts.localeCompare(a.ts);
+  });
+
+  const unreadHub = hubItems.filter(h => myClientIds.has(h.clientId) || h.clientId==="all").length;
+
+  function submitHubItem() {
+    if (!newTitle.trim() || !newBody.trim()) return;
+    const client = allClients.find(c => c.id === newClient);
+    const item = {
+      id: "h" + (hubNextId++),
+      type: newType,
+      author: user.name,
+      role: user.role,
+      clientName: client ? client.name : "All Teams",
+      clientId: newClient,
+      ts: new Date().toISOString(),
+      pinned: false,
+      title: newTitle.trim(),
+      body: newBody.trim(),
+      tags: [],
+    };
+    setHubItems(p => [item, ...p]);
+    setNewTitle(""); setNewBody(""); setNewClient("all"); setShowNewForm(false);
+  }
+
+  function submitAnnouncement() {
+    if (!newAnnText.trim()) return;
+    const ann = {
+      id: "a" + (annNextId++),
+      author: user.name,
+      role: user.role,
+      ts: new Date().toISOString(),
+      urgent: newAnnUrgent,
+      text: newAnnText.trim(),
+    };
+    setAnnouncements(p => [ann, ...p]);
+    ANNOUNCEMENTS_STORE.unshift(ann);
+    setNewAnnText(""); setNewAnnUrgent(false); setShowNewAnn(false);
+  }
+
+  function togglePin(id) {
+    setHubItems(p => p.map(h => h.id===id ? {...h, pinned:!h.pinned} : h));
+  }
+
+  function deleteHubItem(id) {
+    setHubItems(p => p.filter(h => h.id !== id));
+  }
+
+  const TYPE_COLORS = {
+    prayer: { bg:"#f5f0ff", border:"#c4b5fd", text:"#5b21b6", icon:"🙏" },
+    note:   { bg:"#eff6ff", border:"#93c5fd", text:"#1d4ed8", icon:"📌" },
+  };
+
+  function timeAgo(ts) {
+    const diff = Date.now() - new Date(ts).getTime();
+    const m = Math.floor(diff/60000);
+    if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m/60);
+    if (h < 24) return `${h}h ago`;
+    return `${Math.floor(h/24)}d ago`;
+  }
+
+  return (
+    <div style={{ display:"flex",minHeight:"100vh",fontFamily:"'Helvetica Neue',Arial,sans-serif" }}>
+
+      {/* ── Sidebar ── */}
+      <div style={{ width:sideW,flexShrink:0,background:"linear-gradient(180deg,#0f2441 0%,#1a4a7a 100%)",display:"flex",flexDirection:"column",position:"sticky",top:0,height:"100vh",transition:"width 0.22s cubic-bezier(.4,0,.2,1)",zIndex:200 }}>
+        <div style={{ padding:"18px 14px 14px",display:"flex",alignItems:"center",gap:10,borderBottom:"1px solid rgba(255,255,255,0.08)",flexShrink:0,overflow:"hidden" }}>
+          <div style={{ width:36,height:36,borderRadius:10,background:"rgba(255,255,255,0.15)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:800,color:"#fff",flexShrink:0,border:"1.5px solid rgba(255,255,255,0.2)",letterSpacing:"-0.5px" }}>MM</div>
+          {!collapsed && (
+            <div style={{ overflow:"hidden",flex:1 }}>
+              <div style={{ fontSize:13,fontWeight:700,color:"#fff",whiteSpace:"nowrap",lineHeight:1.2 }}>Marketplace</div>
+              <div style={{ fontSize:11,color:"rgba(255,255,255,0.45)",whiteSpace:"nowrap" }}>Ministries Portal</div>
+            </div>
+          )}
+          <button onClick={()=>setCollapsed(c=>!c)}
+            style={{ border:"none",background:"rgba(255,255,255,0.08)",borderRadius:7,width:28,height:28,cursor:"pointer",color:"rgba(255,255,255,0.6)",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"background 0.15s",lineHeight:1 }}
+            onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.18)"}
+            onMouseLeave={e=>e.currentTarget.style.background="rgba(255,255,255,0.08)"}>
+            {collapsed?"›":"‹"}
+          </button>
+        </div>
+
+        <div style={{ flex:1,overflowY:"auto",overflowX:"hidden",padding:"10px 8px" }}>
+          {GROUPS.map(group=>{
+            const items = NAV.filter(n=>n.group===group.key);
+            if (!items.length) return null;
+            return (
+              <div key={group.key} style={{ marginBottom:18 }}>
+                {!collapsed && <div style={{ fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.3)",textTransform:"uppercase",letterSpacing:"0.1em",padding:"2px 8px 8px",whiteSpace:"nowrap" }}>{group.label}</div>}
+                {items.map(item=>{
+                  const active = page===item.id;
+                  return (
+                    <button key={item.id} onClick={()=>setPage(item.id)} title={collapsed?item.label:""}
+                      style={{ width:"100%",display:"flex",alignItems:"center",gap:10,padding:collapsed?"10px 0":"10px 12px",justifyContent:collapsed?"center":"flex-start",borderRadius:9,border:"none",cursor:"pointer",background:active?"rgba(255,255,255,0.15)":"transparent",color:active?"#fff":"rgba(255,255,255,0.58)",fontSize:13,fontWeight:active?700:400,marginBottom:2,transition:"all 0.15s",textAlign:"left",position:"relative" }}
+                      onMouseEnter={e=>{ e.currentTarget.style.background=active?"rgba(255,255,255,0.18)":"rgba(255,255,255,0.08)"; e.currentTarget.style.color="#fff"; }}
+                      onMouseLeave={e=>{ e.currentTarget.style.background=active?"rgba(255,255,255,0.15)":"transparent"; e.currentTarget.style.color=active?"#fff":"rgba(255,255,255,0.58)"; }}>
+                      {active && <div style={{ position:"absolute",left:0,top:"18%",height:"64%",width:3,background:"#5b9cf6",borderRadius:"0 3px 3px 0" }} />}
+                      <span style={{ fontSize:17,flexShrink:0,lineHeight:1 }}>{item.emoji}</span>
+                      {!collapsed && <span style={{ whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis" }}>{item.label}</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ borderTop:"1px solid rgba(255,255,255,0.08)",padding:"10px 8px",flexShrink:0 }}>
+          <button onClick={()=>{ setLangOpen(o=>!o); setProfileOpen(false); }} title={collapsed?LANG_NAMES[lang]:""}
+            style={{ width:"100%",display:"flex",alignItems:"center",gap:10,padding:collapsed?"9px 0":"9px 12px",justifyContent:collapsed?"center":"flex-start",borderRadius:9,border:"none",cursor:"pointer",background:langOpen?"rgba(255,255,255,0.1)":"transparent",color:"rgba(255,255,255,0.55)",fontSize:12,transition:"all 0.15s",marginBottom:4 }}
+            onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.08)"}
+            onMouseLeave={e=>e.currentTarget.style.background=langOpen?"rgba(255,255,255,0.1)":"transparent"}>
+            <span style={{ fontSize:16,flexShrink:0 }}>🌐</span>
+            {!collapsed && <><span style={{ flex:1,textAlign:"left" }}>{LANG_NAMES[lang]}</span><span style={{ fontSize:10,opacity:0.4 }}>▾</span></>}
+          </button>
+          <button onClick={()=>{ setProfileOpen(o=>!o); setLangOpen(false); }}
+            style={{ width:"100%",display:"flex",alignItems:"center",gap:10,padding:collapsed?"9px 0":"9px 12px",justifyContent:collapsed?"center":"flex-start",borderRadius:9,border:"none",cursor:"pointer",background:profileOpen?"rgba(255,255,255,0.12)":"transparent",transition:"all 0.15s" }}
+            onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.08)"}
+            onMouseLeave={e=>e.currentTarget.style.background=profileOpen?"rgba(255,255,255,0.12)":"transparent"}>
+            <div style={{ width:32,height:32,borderRadius:"50%",background:"rgba(255,255,255,0.18)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,color:"#fff",flexShrink:0,border:"1.5px solid rgba(255,255,255,0.25)" }}>{user.avatar}</div>
+            {!collapsed && (
+              <div style={{ flex:1,textAlign:"left",overflow:"hidden",minWidth:0 }}>
+                <div style={{ fontSize:12,fontWeight:700,color:"#fff",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis" }}>{user.name}</div>
+                <div style={{ fontSize:10,color:"rgba(255,255,255,0.4)",whiteSpace:"nowrap" }}>{user.role} · {user.region}</div>
+              </div>
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Fixed popups ── */}
+      {langOpen && (
+        <div style={{ position:"fixed",bottom:80,left:collapsed?72:228,background:"#fff",borderRadius:10,boxShadow:"0 8px 32px rgba(0,0,0,0.22)",overflow:"hidden",minWidth:160,zIndex:9999 }}>
+          {Object.entries(LANG_NAMES).map(([code,name])=>(
+            <button key={code} onClick={()=>{ setLang(code); setLangOpen(false); }}
+              style={{ width:"100%",display:"flex",alignItems:"center",gap:8,padding:"11px 16px",border:"none",background:lang===code?"#f0f4f8":"#fff",cursor:"pointer",fontSize:13,fontWeight:lang===code?700:400,color:lang===code?cc:"#1a2a3a",textAlign:"left" }}>
+              {lang===code && <span style={{ color:cc,fontSize:11 }}>✓</span>}
+              {lang!==code && <span style={{ width:11,display:"inline-block" }} />}
+              {name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {profileOpen && (
+        <div style={{ position:"fixed",bottom:20,left:collapsed?72:228,background:"#fff",borderRadius:12,boxShadow:"0 8px 40px rgba(0,0,0,0.22)",overflow:"hidden",minWidth:240,zIndex:9999 }}>
+          <div style={{ padding:"16px",borderBottom:"1px solid #f0f4f8" }}>
+            <div style={{ display:"flex",alignItems:"center",gap:10,marginBottom:user.vpName?10:0 }}>
+              <div style={{ width:40,height:40,borderRadius:"50%",background:cc,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:700,color:"#fff" }}>{user.avatar}</div>
+              <div>
+                <div style={{ fontSize:14,fontWeight:700,color:"#1a2a3a" }}>{user.name}</div>
+                <div style={{ fontSize:11,color:"#9aa8b8",marginTop:1 }}>{user.email}</div>
+              </div>
+            </div>
+            {user.vpName && <div style={{ fontSize:11,color:"#6b7a8d",background:"#f7f9fc",borderRadius:7,padding:"6px 10px" }}>Reports to: <strong style={{ color:"#1a2a3a" }}>{user.vpName}</strong> · {user.region}</div>}
+          </div>
+          <div style={{ padding:"8px" }}>
+            <button style={{ width:"100%",padding:"9px 12px",borderRadius:8,border:"none",background:"transparent",cursor:"pointer",fontSize:13,color:"#6b7a8d",textAlign:"left",display:"flex",alignItems:"center",gap:8 }}
+              onMouseEnter={e=>e.currentTarget.style.background="#f0f4f8"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+              ⚙️ Settings
+            </button>
+            <button onClick={()=>{ setUser(null); setProfileOpen(false); }}
+              style={{ width:"100%",padding:"9px 12px",borderRadius:8,border:"none",background:"transparent",cursor:"pointer",fontSize:13,color:"#e74c3c",textAlign:"left",fontWeight:600,display:"flex",alignItems:"center",gap:8 }}
+              onMouseEnter={e=>e.currentTarget.style.background="#fdedec"} onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+              → {lx.signOut}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {(profileOpen||langOpen) && (
+        <div onClick={()=>{ setProfileOpen(false); setLangOpen(false); }}
+          style={{ position:"fixed",inset:0,zIndex:9998 }} />
+      )}
+
+      {/* ── Team Hub slide-in panel ── */}
+      {hubOpen && (
+        <div onClick={()=>setHubOpen(false)} style={{ position:"fixed",inset:0,background:"rgba(10,20,40,0.45)",zIndex:1500,backdropFilter:"blur(2px)" }}>
+          <div onClick={e=>e.stopPropagation()} style={{ position:"absolute",top:0,right:0,width:420,height:"100vh",background:"#fff",boxShadow:"-8px 0 40px rgba(0,0,0,0.18)",display:"flex",flexDirection:"column",overflow:"hidden" }}>
+
+            {/* Panel header */}
+            <div style={{ background:"linear-gradient(135deg,#1a4a7a 0%,#2563eb 100%)",padding:"18px 20px",flexShrink:0 }}>
+              <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12 }}>
+                <div>
+                  <div style={{ fontSize:17,fontWeight:700,color:"#fff",fontFamily:"'Georgia',serif" }}>Team Hub</div>
+                  <div style={{ fontSize:11,color:"rgba(255,255,255,0.7)",marginTop:2 }}>Prayer requests &amp; team notes</div>
+                </div>
+                <button onClick={()=>setHubOpen(false)} style={{ background:"rgba(255,255,255,0.15)",border:"none",borderRadius:8,width:30,height:30,cursor:"pointer",color:"#fff",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center" }}>✕</button>
+              </div>
+              {/* Type tabs */}
+              <div style={{ display:"flex",gap:4 }}>
+                {[["all","All"],["prayer","🙏 Prayer"],["note","📌 Notes"]].map(([val,lbl])=>(
+                  <button key={val} onClick={()=>setHubTab(val)}
+                    style={{ padding:"5px 12px",borderRadius:7,border:"none",cursor:"pointer",fontSize:11,fontWeight:hubTab===val?700:400,background:hubTab===val?"rgba(255,255,255,0.95)":"rgba(255,255,255,0.15)",color:hubTab===val?cc:"rgba(255,255,255,0.85)" }}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Client filter + post button */}
+            <div style={{ padding:"10px 16px",borderBottom:"1px solid #f0f4f8",display:"flex",gap:8,alignItems:"center",flexShrink:0,background:"#f7f9fc" }}>
+              <select value={hubFilter} onChange={e=>setHubFilter(e.target.value)}
+                style={{ flex:1,padding:"6px 10px",borderRadius:7,border:"1px solid #d0dae6",fontSize:11,color:"#1a2a3a",background:"#fff",cursor:"pointer" }}>
+                <option value="all">All Clients</option>
+                {allClients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <button onClick={()=>setShowNewForm(f=>!f)}
+                style={{ padding:"6px 14px",borderRadius:7,border:"none",background:cc,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap" }}>
+                + Post
+              </button>
+            </div>
+
+            {/* New post form */}
+            {showNewForm && (
+              <div style={{ padding:"14px 16px",borderBottom:"1px solid #e8edf2",background:"#fffbf0",flexShrink:0 }}>
+                <div style={{ display:"flex",gap:6,marginBottom:10 }}>
+                  {[["prayer","🙏 Prayer Request"],["note","📌 Team Note"]].map(([val,lbl])=>(
+                    <button key={val} onClick={()=>setNewType(val)}
+                      style={{ flex:1,padding:"6px",borderRadius:7,border:"1.5px solid",borderColor:newType===val?TYPE_COLORS[val].text:TYPE_COLORS[val].border,background:newType===val?TYPE_COLORS[val].bg:"#fff",color:TYPE_COLORS[val].text,fontSize:11,fontWeight:newType===val?700:400,cursor:"pointer" }}>
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+                <select value={newClient} onChange={e=>setNewClient(e.target.value)}
+                  style={{ width:"100%",padding:"6px 10px",borderRadius:7,border:"1px solid #d0dae6",fontSize:11,marginBottom:8,background:"#fff",color:"#1a2a3a" }}>
+                  <option value="all">All Teams (no specific client)</option>
+                  {allClients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <input value={newTitle} onChange={e=>setNewTitle(e.target.value)} placeholder="Title / subject..."
+                  style={{ width:"100%",padding:"7px 10px",borderRadius:7,border:"1px solid #d0dae6",fontSize:12,marginBottom:8,boxSizing:"border-box",outline:"none" }} />
+                <textarea value={newBody} onChange={e=>setNewBody(e.target.value)} placeholder="Share what's on your heart or what the team needs to know..."
+                  rows={3} style={{ width:"100%",padding:"7px 10px",borderRadius:7,border:"1px solid #d0dae6",fontSize:12,resize:"vertical",boxSizing:"border-box",outline:"none",fontFamily:"inherit" }} />
+                <div style={{ display:"flex",gap:8,marginTop:8,justifyContent:"flex-end" }}>
+                  <button onClick={()=>setShowNewForm(false)} style={{ padding:"6px 14px",borderRadius:7,border:"1px solid #d0dae6",background:"#fff",color:"#6b7a8d",fontSize:11,cursor:"pointer" }}>Cancel</button>
+                  <button onClick={submitHubItem} style={{ padding:"6px 16px",borderRadius:7,border:"none",background:cc,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer" }}>Post</button>
+                </div>
+              </div>
+            )}
+
+            {/* Items list */}
+            <div style={{ flex:1,overflowY:"auto",padding:"10px 12px" }}>
+              {scopedHub.length === 0 && (
+                <div style={{ textAlign:"center",padding:"40px 20px",color:"#9aa8b8" }}>
+                  <div style={{ fontSize:32,marginBottom:8 }}>🕊️</div>
+                  <div style={{ fontSize:13,fontWeight:600 }}>Nothing here yet</div>
+                  <div style={{ fontSize:12,marginTop:4 }}>Post a prayer request or team note above.</div>
+                </div>
+              )}
+              {scopedHub.map(item => {
+                const TC = TYPE_COLORS[item.type];
+                const canDelete = item.author === user.name;
+                return (
+                  <div key={item.id} style={{ background:item.pinned?"#fffbf0":"#fff",border:`1px solid ${item.pinned?"#fde68a":TC.border}`,borderRadius:12,padding:"13px 14px",marginBottom:10,position:"relative" }}>
+                    {item.pinned && <div style={{ position:"absolute",top:10,right:10,fontSize:12 }}>📌</div>}
+                    {/* Type badge + client */}
+                    <div style={{ display:"flex",alignItems:"center",gap:6,marginBottom:6,flexWrap:"wrap" }}>
+                      <div style={{ fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:6,background:TC.bg,color:TC.text,border:`1px solid ${TC.border}` }}>
+                        {TC.icon} {item.type === "prayer" ? "Prayer Request" : "Team Note"}
+                      </div>
+                      {item.clientName !== "All Teams" && (
+                        <div style={{ fontSize:10,color:"#6b7a8d",background:"#f0f4f8",padding:"2px 7px",borderRadius:6 }}>{item.clientName}</div>
+                      )}
+                    </div>
+                    <div style={{ fontSize:13,fontWeight:700,color:"#1a2a3a",marginBottom:4,paddingRight:20 }}>{item.title}</div>
+                    <div style={{ fontSize:12,color:"#4a5568",lineHeight:1.65,marginBottom:8 }}>{item.body}</div>
+                    {/* Footer */}
+                    <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between" }}>
+                      <div style={{ fontSize:10,color:"#9aa8b8",display:"flex",alignItems:"center",gap:6 }}>
+                        <div style={{ width:20,height:20,borderRadius:"50%",background:cc+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:cc }}>
+                          {item.author.split(" ").slice(-1)[0].charAt(0)}
+                        </div>
+                        <span>{item.author}</span>
+                        <span>·</span>
+                        <span>{timeAgo(item.ts)}</span>
+                      </div>
+                      <div style={{ display:"flex",gap:4 }}>
+                        <button onClick={()=>togglePin(item.id)}
+                          style={{ border:"none",background:"none",cursor:"pointer",fontSize:11,color:"#9aa8b8",padding:"2px 6px",borderRadius:5 }}
+                          title={item.pinned?"Unpin":"Pin to top"}>
+                          {item.pinned?"📌":"pin"}
+                        </button>
+                        {canDelete && (
+                          <button onClick={()=>deleteHubItem(item.id)}
+                            style={{ border:"none",background:"none",cursor:"pointer",fontSize:11,color:"#e74c3c",padding:"2px 6px",borderRadius:5 }}>
+                            remove
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Main column ── */}
+      <div style={{ flex:1,display:"flex",flexDirection:"column",minWidth:0,background:"#f0f4f8" }}>
+
+        {/* Slim top bar */}
+        <div style={{ background:"#fff",borderBottom:"1px solid #e0e6ef",height:50,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 24px",position:"sticky",top:0,zIndex:100,flexShrink:0 }}>
+          <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+            <span style={{ fontSize:11,color:"#b0bcc8" }}>Marketplace Ministries</span>
+            <span style={{ fontSize:11,color:"#c8d0da" }}>›</span>
+            <span style={{ fontSize:13,fontWeight:700,color:"#1a2a3a" }}>{NAV.find(n=>n.id===page)?.label||"Dashboard"}</span>
+          </div>
+          <div style={{ display:"flex",alignItems:"center",gap:10 }}>
+            <div style={{ fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:20,background:cc+"15",color:cc }}>{user.role}{user.region!=="National"?` · ${user.region}`:""}</div>
+            {/* Team Hub bell */}
+            <button onClick={()=>setHubOpen(true)}
+              style={{ position:"relative",border:"none",background:"#f0f4f8",borderRadius:8,width:32,height:32,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16 }}
+              title="Team Hub — Prayer & Notes">
+              🔔
+              {unreadHub > 0 && (
+                <div style={{ position:"absolute",top:4,right:4,width:8,height:8,borderRadius:"50%",background:"#e74c3c",border:"1.5px solid #fff" }} />
+              )}
+            </button>
+            <div style={{ display:"flex",alignItems:"center",gap:5,fontSize:11,color:"#9aa8b8" }}>
+              <div style={{ width:6,height:6,borderRadius:"50%",background:"#27ae60" }}/>CRM synced
+            </div>
+          </div>
+        </div>
+
+        {/* ── Announcement banners ── */}
+        {visibleAnn.map(ann => (
+          <div key={ann.id} style={{ background:ann.urgent?"linear-gradient(90deg,#7f1d1d,#991b1b)":"linear-gradient(90deg,#1e3a5f,#1a4a7a)",padding:"10px 24px",display:"flex",alignItems:"flex-start",gap:12,flexShrink:0,position:"sticky",top:50,zIndex:99 }}>
+            <div style={{ fontSize:16,flexShrink:0,marginTop:1 }}>{ann.urgent?"🚨":"📣"}</div>
+            <div style={{ flex:1,minWidth:0 }}>
+              <div style={{ display:"flex",alignItems:"center",gap:8,marginBottom:2 }}>
+                {ann.urgent && <div style={{ fontSize:10,fontWeight:700,background:"#fca5a5",color:"#7f1d1d",padding:"1px 7px",borderRadius:5,letterSpacing:"0.06em" }}>URGENT</div>}
+                <div style={{ fontSize:10,color:"rgba(255,255,255,0.55)" }}>From {ann.author} · {timeAgo(ann.ts)}</div>
+              </div>
+              <div style={{ fontSize:12,color:"rgba(255,255,255,0.92)",lineHeight:1.5 }}>{ann.text}</div>
+            </div>
+            <button onClick={()=>setDismissedBanners(s=>new Set([...s,ann.id]))}
+              style={{ background:"rgba(255,255,255,0.12)",border:"none",borderRadius:6,width:24,height:24,cursor:"pointer",color:"rgba(255,255,255,0.6)",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0 }}>✕</button>
+          </div>
+        ))}
+
+        {/* Admin: post new announcement (VP/Exec only) */}
+        {canPost && (
+          <div style={{ padding:"0 24px",background:"#f0f4f8",flexShrink:0 }}>
+            {showNewAnn ? (
+              <div style={{ background:"#fff",border:"1px solid #e0e6ef",borderRadius:10,padding:"14px 16px",margin:"12px 0 0" }}>
+                <div style={{ fontSize:12,fontWeight:700,color:"#1a2a3a",marginBottom:8 }}>📣 Post System-Wide Announcement</div>
+                <textarea value={newAnnText} onChange={e=>setNewAnnText(e.target.value)} placeholder="Write your announcement..."
+                  rows={2} style={{ width:"100%",padding:"8px 10px",borderRadius:7,border:"1px solid #d0dae6",fontSize:12,resize:"vertical",boxSizing:"border-box",outline:"none",fontFamily:"inherit",marginBottom:8 }} />
+                <div style={{ display:"flex",alignItems:"center",gap:10,justifyContent:"space-between" }}>
+                  <label style={{ display:"flex",alignItems:"center",gap:6,fontSize:12,color:"#6b7a8d",cursor:"pointer" }}>
+                    <input type="checkbox" checked={newAnnUrgent} onChange={e=>setNewAnnUrgent(e.target.checked)} />
+                    Mark as urgent
+                  </label>
+                  <div style={{ display:"flex",gap:8 }}>
+                    <button onClick={()=>setShowNewAnn(false)} style={{ padding:"6px 14px",borderRadius:7,border:"1px solid #d0dae6",background:"#fff",color:"#6b7a8d",fontSize:11,cursor:"pointer" }}>Cancel</button>
+                    <button onClick={submitAnnouncement} style={{ padding:"6px 16px",borderRadius:7,border:"none",background:cc,color:"#fff",fontSize:11,fontWeight:700,cursor:"pointer" }}>Broadcast</button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <button onClick={()=>setShowNewAnn(true)}
+                style={{ fontSize:11,color:"#9aa8b8",background:"none",border:"none",cursor:"pointer",padding:"6px 0",display:"flex",alignItems:"center",gap:5 }}>
+                📣 Post announcement...
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Content */}
+        <div style={{ flex:1,overflow:"auto" }}>{children}</div>
+      </div>
+    </div>
+  );
+}
 
   return (
     <div style={{ display:"flex",minHeight:"100vh",fontFamily:"'Helvetica Neue',Arial,sans-serif" }}>
