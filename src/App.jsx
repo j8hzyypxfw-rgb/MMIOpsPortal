@@ -3624,15 +3624,18 @@ function HoursCalendarPage({ user, allClients }) {
   const [viewMode,    setViewMode]    = useState("month"); // "month" | "week" | "year"
   const [clientFilter, setClientFilter] = useState("all");
 
-  // Role-scoped visits
-  const scopedVisits = visits.filter(v => {
-    if (user.role === "Chaplain") return v.chaplains.includes(user.name);
-    if (user.role === "EDO")      return allClients.filter(c=>c.id===v.clientId).some(c=>c.edoId===user.id||c.region===user.region);
-    return true; // VP / Exec see all
-  });
+  // Role-scoped: allClients is already pre-filtered per role by the App component
+  // so we just match visits to any client in allClients
+  const clientIds = new Set(allClients.map(c => c.id));
+  const scopedVisits = visits.filter(v => clientIds.has(v.clientId));
 
-  const filteredVisits = clientFilter === "all" ? scopedVisits
-    : scopedVisits.filter(v => v.clientId === clientFilter);
+  // All chaplains across these clients for the filter dropdown
+  const allChaplains = Array.from(new Set(allClients.flatMap(c => c.chaplainNames || []))).sort();
+  const [chaplainFilter, setChaplainFilter] = useState("all");
+
+  const filteredVisits = scopedVisits
+    .filter(v => clientFilter === "all"   || v.clientId === clientFilter)
+    .filter(v => chaplainFilter === "all" || v.chaplains.includes(chaplainFilter));
 
   // Build date → visits map
   const visitsByDate = {};
@@ -3717,6 +3720,12 @@ function HoursCalendarPage({ user, allClients }) {
             style={{ padding:"7px 12px",borderRadius:8,border:"1px solid #d0dae6",fontSize:12,color:"#1a2a3a",background:"#fff",cursor:"pointer" }}>
             <option value="all">All Clients</option>
             {allClients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          {/* Chaplain filter */}
+          <select value={chaplainFilter} onChange={e=>{setChaplainFilter(e.target.value);setSelectedDay(null);}}
+            style={{ padding:"7px 12px",borderRadius:8,border:"1px solid #d0dae6",fontSize:12,color:"#1a2a3a",background:"#fff",cursor:"pointer" }}>
+            <option value="all">All Chaplains</option>
+            {allChaplains.map(ch=><option key={ch} value={ch}>{ch}</option>)}
           </select>
         </div>
       </div>
