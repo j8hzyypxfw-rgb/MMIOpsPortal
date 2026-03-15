@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import React, { useState, useRef } from "react";
 import {
   BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -3892,7 +3892,8 @@ function HoursCalendarPage({ user, allClients }) {
   );
 }
 
-
+// ── App Shell (Sidebar Nav) ───────────────────────────────────────────────────
+function AppShell({ page, setPage, user, setUser, lang, setLang, children }) {
   const [collapsed, setCollapsed] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
@@ -4059,7 +4060,7 @@ function HoursCalendarPage({ user, allClients }) {
   );
 }
 
-export default function EDODashboard() {
+export default function App() {
   const [user, setUser] = useState(null);
   const [lang, setLang] = useState("en");
   const [page, setPage] = useState("dashboard"); // "dashboard" | "ecr" | "chaplains" | "visits"
